@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 import {
   completeWeek,
   fetchProgress,
+  fetchResults,
   recordBaseline,
   requestEvaluation,
   type EvaluationStatus,
 } from "@/lib/api/client";
 import type { Checkpoint, Progress } from "@/lib/schemas/checkpoint";
+import type { StudentResult } from "@/lib/schemas/review";
 import { PROJECT_DURATION_WEEKS } from "@/lib/validation/project";
 
 type Load =
@@ -26,6 +28,36 @@ export function ProgressSection({ projectId }: { projectId: string }) {
   const [confirmWeek, setConfirmWeek] = useState<number | null>(null);
   const [evaluating, setEvaluating] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [results, setResults] = useState<StudentResult[]>([]);
+  const [resultsState, setResultsState] = useState<"loading" | "loaded" | "failed">("loading");
+
+  // Weeks a teacher has decided. Only then is there an official result to fetch.
+  const decidedWeeks =
+    load.status === "ready"
+      ? load.progress.evaluations
+          .filter((e) => e.status !== "pending_review")
+          .map((e) => e.weekNumber)
+          .sort((a, b) => a - b)
+          .join(",")
+      : "";
+
+  useEffect(() => {
+    if (!decidedWeeks) return;
+    let cancelled = false;
+    fetchResults(projectId).then(
+      (list) => {
+        if (cancelled) return;
+        setResults(list);
+        setResultsState("loaded");
+      },
+      () => {
+        if (!cancelled) setResultsState("failed");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, decidedWeeks]);
 
   useEffect(() => {
     let cancelled = false;
@@ -233,6 +265,9 @@ export function ProgressSection({ projectId }: { projectId: string }) {
                   </div>
 
                   {checkpoint && <CheckpointDetails checkpoint={checkpoint} />}
+                  {evaluation && evaluation.status !== "pending_review" && (
+                    <OfficialResult result={results.find((r) => r.weekNumber === week)} state={resultsState} />
+                  )}
                   {evaluating === week && (
                     <p role="status" className="mt-2 text-xs text-indigo-800">
                       Evaluating your code changes… this can take up to a minute.
@@ -324,5 +359,47 @@ function CheckpointDetails({ checkpoint }: { checkpoint: Checkpoint }) {
       {checkpoint.filesChanged === 1 ? "file" : "files"} changed (+{checkpoint.additions} −{checkpoint.deletions}) since{" "}
       <code className="rounded bg-slate-100 px-1">{short(checkpoint.baseCommitSha)}</code>
     </p>
+  );
+}
+
+/** The teacher's official outcome for a week. Never the AI's own score or feedback. */
+function OfficialResult({
+  result,
+  state,
+}: {
+  result: StudentResult | undefined;
+  state: "loading" | "loaded" | "failed";
+}) {
+  if (!result) {
+    return state !== "loading" ? (
+      <p role="alert" className="mt-2 text-xs text-red-800">
+        Your teacher has reviewed this week, but the result could not be loaded. Please refresh the page.
+      </p>
+    ) : (
+      <p role="status" className="mt-2 text-xs text-slate-600">
+        Loading your teacher&apos;s result…
+      </p>
+    );
+  }
+  if (result.outcome === "rejected") {
+    return (
+      <p className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">
+        Your teacher reviewed this week and did not give an official mark for it.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-3 space-y-1 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm">
+      <p className="font-medium text-emerald-950">
+        Official result: {result.officialScore}/100
+        <span className="font-normal text-emerald-900"> · set by your teacher</span>
+      </p>
+      {result.feedback && (
+        <div>
+          <p className="font-medium text-emerald-950">Teacher feedback</p>
+          <p className="whitespace-pre-line text-slate-800">{result.feedback}</p>
+        </div>
+      )}
+    </div>
   );
 }

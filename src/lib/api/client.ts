@@ -10,6 +10,16 @@ import {
   type Progress,
 } from "@/lib/schemas/checkpoint";
 import { RepoInfoSchema, type RepoInfo } from "@/lib/schemas/repo-info";
+import {
+  QueueItemSchema,
+  ReviewDetailSchema,
+  StudentResultSchema,
+  type DecisionRequest,
+  type QueueItem,
+  type ReviewDetail,
+  type StudentResult,
+} from "@/lib/schemas/review";
+import { TeacherDecisionSchema, type TeacherDecision } from "@/lib/schemas/teacher-decision";
 import { StoredPlanSchema, type StoredPlan } from "@/lib/schemas/weekly-plan";
 import type {
   ProjectFormErrors,
@@ -189,4 +199,48 @@ export async function createProject(
     if (f.repoUrl) fields.repoUrl = f.repoUrl;
   }
   return { result: { ok: false, message, fields } };
+}
+
+/** Student-safe: only the official outcomes a teacher has decided. */
+export async function fetchResults(projectId: string): Promise<StudentResult[]> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/results`, { cache: "no-store" });
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ results: z.array(StudentResultSchema) }).parse(await res.json()).results;
+}
+
+export type QueueFilter = "pending_review" | "approved" | "edited" | "rejected" | "all";
+
+/** Faculty: the review queue (carries the AI suggestions). */
+export async function fetchQueue(status: QueueFilter): Promise<QueueItem[]> {
+  const res = await fetch(`/api/faculty/evaluations?status=${status}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ evaluations: z.array(QueueItemSchema) }).parse(await res.json()).evaluations;
+}
+
+/** Faculty: one evaluation with the diff the AI saw. Null when it does not exist. */
+export async function fetchReview(evaluationId: string): Promise<ReviewDetail | null> {
+  const res = await fetch(`/api/faculty/evaluations/${encodeURIComponent(evaluationId)}`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readError(res));
+  return ReviewDetailSchema.parse(await res.json());
+}
+
+export type DecisionResult =
+  | { ok: true; decision: TeacherDecision }
+  | { ok: false; message: string; fields?: Record<string, string> };
+
+/** Faculty: records the official decision. It is final. */
+export async function sendDecision(evaluationId: string, request: DecisionRequest): Promise<DecisionResult> {
+  const res = await fetch(`/api/faculty/evaluations/${encodeURIComponent(evaluationId)}/decision`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (res.ok) {
+    return { ok: true, decision: z.object({ decision: TeacherDecisionSchema }).parse(await res.json()).decision };
+  }
+  const parsed = ErrorBodySchema.safeParse(await res.json().catch(() => null));
+  return parsed.success
+    ? { ok: false, message: parsed.data.error.message, fields: parsed.data.error.fields }
+    : { ok: false, message: `Request failed (${res.status}).` };
 }

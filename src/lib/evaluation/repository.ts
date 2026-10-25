@@ -13,7 +13,7 @@ import {
   type StoredEvaluation,
 } from "./service";
 
-const COLUMNS =
+export const COLUMNS =
   "id, project_id, checkpoint_id, week_number, suggested_score, result, snapshot, model, status, created_at";
 
 const Row = z.object({
@@ -30,7 +30,7 @@ const Row = z.object({
   created_at: z.string(),
 });
 
-function toStored(raw: unknown): StoredEvaluation {
+export function toStored(raw: unknown): StoredEvaluation {
   const row = Row.safeParse(raw);
   if (!row.success) throw new RepositoryError("invalid_data", "Stored evaluation has an unexpected shape.");
   const r = row.data;

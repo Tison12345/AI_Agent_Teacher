@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   recordBaseline: vi.fn(),
   completeWeek: vi.fn(),
   requestEvaluation: vi.fn(),
+  fetchResults: vi.fn(),
 }));
 vi.mock("@/lib/api/client", () => api);
 
@@ -35,6 +36,7 @@ const submitted = (week: number) => ({ weekNumber: week, status: "pending_review
 beforeEach(() => {
   vi.clearAllMocks();
   api.requestEvaluation.mockResolvedValue({ ok: true, status: "pending_review" });
+  api.fetchResults.mockResolvedValue([]);
 });
 
 const row = (week: number) => screen.getByText(`Week ${week}`).closest("li") as HTMLElement;
@@ -238,5 +240,61 @@ describe("ProgressSection: evaluation after recording", () => {
     );
     render(<ProgressSection projectId={PROJECT} />);
     expect(await screen.findByText("Recorded · reviewed by your teacher")).toBeInTheDocument();
+  });
+});
+
+describe("ProgressSection: the teacher's official result", () => {
+  const decided = (weekNumber: number, status: "approved" | "edited" | "rejected") => ({ weekNumber, status });
+  const result = (over: object) => ({
+    weekNumber: 1,
+    outcome: "approved",
+    officialScore: 82.5,
+    feedback: "- Add validation\n- Reset the form",
+    decidedAt: "2026-10-26T12:00:00+00:00",
+    ...over,
+  });
+
+  it("shows the official score and the teacher's feedback once a teacher has decided", async () => {
+    api.fetchProgress.mockResolvedValue(
+      progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [decided(1, "approved")] }),
+    );
+    api.fetchResults.mockResolvedValue([result({})]);
+    render(<ProgressSection projectId={PROJECT} />);
+    await screen.findByText("Recorded · reviewed by your teacher");
+    expect(await within(row(1)).findByText(/Official result: 82\.5\/100/)).toBeInTheDocument();
+    expect(within(row(1)).getByText("Teacher feedback")).toBeInTheDocument();
+    expect(row(1)).toHaveTextContent("Add validation");
+    expect(api.fetchResults).toHaveBeenCalledWith(PROJECT);
+  });
+
+  it("shows no score for a rejected week, only that the teacher reviewed it", async () => {
+    api.fetchProgress.mockResolvedValue(
+      progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [decided(1, "rejected")] }),
+    );
+    api.fetchResults.mockResolvedValue([result({ outcome: "rejected", officialScore: null, feedback: null })]);
+    render(<ProgressSection projectId={PROJECT} />);
+    await screen.findByText("Recorded · reviewed by your teacher");
+    expect(await within(row(1)).findByText(/did not give an official mark/)).toBeInTheDocument();
+    expect(row(1).textContent).not.toMatch(/\d+\s*\/\s*100/);
+  });
+
+  it("does not ask for results while every evaluation is still waiting for review", async () => {
+    api.fetchProgress.mockResolvedValue(
+      progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [submitted(1)] }),
+    );
+    render(<ProgressSection projectId={PROJECT} />);
+    await screen.findByText("Recorded · submitted for teacher review");
+    expect(api.fetchResults).not.toHaveBeenCalled();
+    expect(within(row(1)).queryByText(/Official result/)).not.toBeInTheDocument();
+  });
+
+  it("says so when the result cannot be loaded, instead of showing nothing", async () => {
+    api.fetchProgress.mockResolvedValue(
+      progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [decided(1, "edited")] }),
+    );
+    api.fetchResults.mockRejectedValue(new Error("network"));
+    render(<ProgressSection projectId={PROJECT} />);
+    await screen.findByText("Recorded · reviewed by your teacher");
+    expect(await within(row(1)).findByRole("alert")).toHaveTextContent(/result could not be loaded/);
   });
 });
