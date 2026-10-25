@@ -3,7 +3,7 @@ import { CheckpointSchema } from "./checkpoint";
 import { EvaluationSchema } from "./evaluation";
 import { ProjectSchema } from "./project";
 import { TeacherDecisionSchema } from "./teacher-decision";
-import { WeeklyPlanSchema, type WeeklyPlanItem } from "./weekly-plan";
+import { GeneratedPlanSchema, WeeklyPlanSchema, type WeeklyPlanItem } from "./weekly-plan";
 
 const uuid = "123e4567-e89b-42d3-a456-426614174000";
 const uuid2 = "223e4567-e89b-42d3-a456-426614174000";
@@ -16,7 +16,10 @@ const week = (n: number): WeeklyPlanItem => ({
   objectives: ["Learn"],
   tasks: ["Build"],
   deliverables: ["Code"],
-  evaluationCriteria: [{ name: "Works", description: "It runs", maxPoints: 10 }],
+  evaluationCriteria: [
+    { name: "Works", description: "It runs", maxPoints: 60 },
+    { name: "Quality", description: "Clean code", maxPoints: 40 },
+  ],
 });
 
 describe("ProjectSchema", () => {
@@ -47,6 +50,28 @@ describe("WeeklyPlanSchema", () => {
     expect(WeeklyPlanSchema.safeParse([...plan].reverse()).success).toBe(false);
     const empty = plan.map((w, i) => (i === 0 ? { ...w, tasks: [] } : w));
     expect(WeeklyPlanSchema.safeParse(empty).success).toBe(false);
+    const off = plan.map((w, i) =>
+      i === 2 ? { ...w, evaluationCriteria: [{ name: "A", description: "a", maxPoints: 50 }, { name: "B", description: "b", maxPoints: 40 }] } : w,
+    );
+    expect(WeeklyPlanSchema.safeParse(off).success).toBe(false);
+  });
+});
+
+describe("stored vs. generated plan shapes", () => {
+  const roomy = (n: number): WeeklyPlanItem => ({
+    ...week(n),
+    objectives: ["a", "b", "c"],
+    tasks: ["1", "2", "3", "4", "5", "6"],
+    deliverables: ["x", "y"],
+    evaluationCriteria: [25, 25, 25, 25].map((p, i) => ({ name: "C" + i, description: "d", maxPoints: p })),
+  });
+  const oldPlan = Array.from({ length: 12 }, (_, i) => roomy(i + 1));
+
+  it("still loads plans saved earlier (more tasks, goals and criteria)", () => {
+    expect(WeeklyPlanSchema.safeParse(oldPlan).success).toBe(true);
+  });
+  it("requires the simplified shape for newly generated plans", () => {
+    expect(GeneratedPlanSchema.safeParse(oldPlan).success).toBe(false);
   });
 });
 

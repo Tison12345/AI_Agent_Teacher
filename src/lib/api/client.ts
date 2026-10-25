@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ProjectSubmitResult } from "@/components/ProjectForm";
 import { ProjectSchema, type Project } from "@/lib/schemas/project";
+import { StoredPlanSchema, type StoredPlan } from "@/lib/schemas/weekly-plan";
 import type {
   ProjectFormErrors,
   ProjectFormValues,
@@ -36,6 +37,25 @@ export async function fetchProject(id: string): Promise<Project | null> {
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(await readError(res));
   return z.object({ project: ProjectSchema }).parse(await res.json()).project;
+}
+
+export async function fetchPlan(projectId: string): Promise<StoredPlan | null> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/plan`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return z
+    .object({ plan: StoredPlanSchema.nullable() })
+    .parse(await res.json()).plan;
+}
+
+/** Asks the server to generate and save the plan. Can take up to a minute. */
+export async function generatePlan(projectId: string): Promise<StoredPlan> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/plan`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ plan: StoredPlanSchema }).parse(await res.json()).plan;
 }
 
 export async function createProject(

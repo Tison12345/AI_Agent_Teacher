@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { PlanSection } from "@/components/PlanSection";
 import { fetchProject } from "@/lib/api/client";
 import type { Project } from "@/lib/schemas/project";
 
@@ -76,6 +77,7 @@ export function ProjectDetail({ id }: { id: string }) {
           </dl>
         </article>
       )}
+      {state.status === "ready" && <PlanSection projectId={state.project.id} />}
     </div>
   );
 }

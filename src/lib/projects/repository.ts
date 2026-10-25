@@ -6,7 +6,7 @@ import type { ProjectFormValues } from "@/lib/validation/project";
 
 export class RepositoryError extends Error {
   constructor(
-    readonly code: "db_error" | "invalid_data",
+    readonly code: "db_error" | "invalid_data" | "conflict" | "not_found",
     message: string,
   ) {
     super(message);

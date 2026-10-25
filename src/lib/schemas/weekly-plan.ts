@@ -1,32 +1,86 @@
 import { z } from "zod";
 import { PROJECT_DURATION_WEEKS } from "@/lib/validation/project";
 
-const nonEmpty = z.string().trim().min(1);
+const text = (max: number) => z.string().trim().min(1).max(max);
+
+export const CRITERIA_TOTAL_POINTS = 100;
 
 export const EvaluationCriterionSchema = z.object({
-  name: nonEmpty.max(120),
-  description: nonEmpty.max(500),
-  maxPoints: z.number().int().positive().max(100),
+  name: text(120),
+  description: text(500),
+  maxPoints: z.number().int().positive().max(CRITERIA_TOTAL_POINTS),
 });
 
 export const WeeklyPlanItemSchema = z.object({
   weekNumber: z.number().int().min(1).max(PROJECT_DURATION_WEEKS),
-  title: nonEmpty.max(150),
-  objectives: z.array(nonEmpty).min(1),
-  tasks: z.array(nonEmpty).min(1),
-  deliverables: z.array(nonEmpty).min(1),
-  evaluationCriteria: z.array(EvaluationCriterionSchema).min(1),
+  title: text(150),
+  objectives: z.array(text(400)).min(1).max(8),
+  tasks: z.array(text(400)).min(1).max(12),
+  deliverables: z.array(text(400)).min(1).max(8),
+  evaluationCriteria: z
+    .array(EvaluationCriterionSchema)
+    .min(2)
+    .max(8)
+    .refine(
+      (criteria) =>
+        criteria.reduce((sum, c) => sum + c.maxPoints, 0) ===
+        CRITERIA_TOTAL_POINTS,
+      `Criteria maxPoints must add up to ${CRITERIA_TOTAL_POINTS}.`,
+    ),
 });
 
-/** A full plan: exactly 12 items, one per week 1..12. */
+const inOrder = (items: { weekNumber: number }[]) =>
+  items.every((item, index) => item.weekNumber === index + 1);
+const IN_ORDER_MESSAGE = "Weeks must be numbered 1 to 12 in order.";
+
+/**
+ * A full stored plan: exactly 12 items, one per week 1..12. Deliberately
+ * lenient about list sizes so plans saved earlier keep loading.
+ */
 export const WeeklyPlanSchema = z
   .array(WeeklyPlanItemSchema)
   .length(PROJECT_DURATION_WEEKS)
-  .refine(
-    (items) => items.every((item, index) => item.weekNumber === index + 1),
-    "Weeks must be numbered 1 to 12 in order.",
-  );
+  .refine(inOrder, IN_ORDER_MESSAGE);
 
+/**
+ * The simplified, student-friendly shape required of newly generated plans.
+ * Same fields as the stored shape, with a stricter meaning:
+ * - objectives: exactly one entry, the week's goal (1-2 sentences)
+ * - tasks: 2-4 short tasks
+ * - deliverables: exactly one entry, the expected result
+ * - evaluationCriteria: 2-3 criteria totalling 100 points
+ */
+export const GeneratedWeekSchema = WeeklyPlanItemSchema.extend({
+  title: text(80),
+  objectives: z.array(text(300)).length(1),
+  tasks: z.array(text(250)).min(2).max(4),
+  deliverables: z.array(text(300)).length(1),
+  evaluationCriteria: z
+    .array(EvaluationCriterionSchema)
+    .min(2)
+    .max(3)
+    .refine(
+      (criteria) =>
+        criteria.reduce((sum, c) => sum + c.maxPoints, 0) ===
+        CRITERIA_TOTAL_POINTS,
+      `Criteria maxPoints must add up to ${CRITERIA_TOTAL_POINTS}.`,
+    ),
+});
+
+export const GeneratedPlanSchema = z
+  .array(GeneratedWeekSchema)
+  .length(PROJECT_DURATION_WEEKS)
+  .refine(inOrder, IN_ORDER_MESSAGE);
+
+/** A plan as persisted: one per project, with the model that produced it. */
+export const StoredPlanSchema = z.object({
+  projectId: z.uuid(),
+  plan: WeeklyPlanSchema,
+  model: z.string().min(1),
+  generatedAt: z.iso.datetime({ offset: true }),
+});
+
+export type StoredPlan = z.infer<typeof StoredPlanSchema>;
 export type EvaluationCriterion = z.infer<typeof EvaluationCriterionSchema>;
 export type WeeklyPlanItem = z.infer<typeof WeeklyPlanItemSchema>;
 export type WeeklyPlan = z.infer<typeof WeeklyPlanSchema>;
