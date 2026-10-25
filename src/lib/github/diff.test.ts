@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { processDiffFiles, type DiffLimits } from "./diff";
+import { prioritizeFiles, processDiffFiles, type DiffLimits } from "./diff";
 import type { CompareFile } from "./schemas";
 
 const file = (over: Partial<CompareFile> = {}): CompareFile => ({
@@ -119,5 +119,23 @@ describe("processDiffFiles", () => {
 
   it("returns an empty result for an empty diff", () => {
     expect(processDiffFiles([], limits())).toMatchObject({ files: [], totalFiles: 0, truncated: false, patchChars: 0 });
+  });
+});
+
+describe("prioritizeFiles", () => {
+  it("puts source code first, then tests, then docs/config, keeping order within a group", () => {
+    const names = ["README.md", "test/app.test.js", "src/b.ts", "package.json", "tests/test_models.py", "src/a.py", "docs/notes.txt"];
+    const ordered = prioritizeFiles(names.map((filename) => file({ filename }))).map((f) => f.filename);
+    expect(ordered).toEqual(["src/b.ts", "src/a.py", "test/app.test.js", "tests/test_models.py", "README.md", "package.json", "docs/notes.txt"]);
+  });
+
+  it("means the budget is spent on source files before docs", () => {
+    const files = [
+      file({ filename: "docs/a.md", patch: "d".repeat(80) }),
+      file({ filename: "src/app.ts", patch: "s".repeat(80) }),
+    ];
+    const out = processDiffFiles(prioritizeFiles(files), limits({ maxTotalPatchChars: 100 }));
+    expect(out.files[0]).toMatchObject({ path: "src/app.ts", patchTruncated: false });
+    expect(out.files[1]).toMatchObject({ path: "docs/a.md", patchTruncated: true });
   });
 });

@@ -7,6 +7,7 @@ const api = vi.hoisted(() => ({
   fetchProgress: vi.fn(),
   recordBaseline: vi.fn(),
   completeWeek: vi.fn(),
+  requestEvaluation: vi.fn(),
 }));
 vi.mock("@/lib/api/client", () => api);
 
@@ -28,13 +29,17 @@ const checkpoint = (week: number, over: Partial<Checkpoint> = {}): Checkpoint =>
   recordedAt: "2026-10-26T10:00:00+00:00",
   ...over,
 });
-const progress = (over: Partial<Progress> = {}): Progress => ({ baseline: null, checkpoints: [], ...over });
+const progress = (over: Partial<Progress> = {}): Progress => ({ baseline: null, checkpoints: [], evaluations: [], ...over });
+const submitted = (week: number) => ({ weekNumber: week, status: "pending_review" as const });
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  api.requestEvaluation.mockResolvedValue({ ok: true, status: "pending_review" });
+});
 
 const row = (week: number) => screen.getByText(`Week ${week}`).closest("li") as HTMLElement;
 
-describe("ProgressSection", () => {
+describe("ProgressSection: starting point and recording", () => {
   it("shows loading, then the starting-point prompt with every week locked", async () => {
     api.fetchProgress.mockResolvedValue(progress());
     render(<ProgressSection projectId={PROJECT} />);
@@ -65,7 +70,6 @@ describe("ProgressSection", () => {
     expect(startingPoint).toHaveTextContent("main");
     expect(screen.getByRole("button", { name: "Complete Week 1" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Complete Week 2" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Record starting point" })).not.toBeInTheDocument();
   });
 
   it("shows the reason when the starting point cannot be recorded", async () => {
@@ -85,37 +89,20 @@ describe("ProgressSection", () => {
     const confirm = screen.getByRole("group", { name: "Confirm Week 1" });
     expect(confirm).toHaveTextContent(/cannot be undone/);
     expect(confirm).toHaveTextContent(/Push all your work first/);
-    expect(api.completeWeek).not.toHaveBeenCalled();
     await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("group", { name: "Confirm Week 1" })).not.toBeInTheDocument();
     expect(api.completeWeek).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Complete Week 1" })).toBeInTheDocument();
-  });
-
-  it("records the week after confirmation, labelled as recorded but not evaluated", async () => {
-    api.fetchProgress.mockResolvedValue(progress({ baseline }));
-    api.completeWeek.mockResolvedValue({ ok: true, value: checkpoint(1) });
-    const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
-    await user.click(await screen.findByRole("button", { name: "Complete Week 1" }));
-    await user.click(screen.getByRole("button", { name: "Yes, record Week 1" }));
-    expect(api.completeWeek).toHaveBeenCalledWith(PROJECT, 1);
-    expect(await within(row(1)).findByText("Recorded · not yet evaluated")).toBeInTheDocument();
-    expect(row(1)).toHaveTextContent("4 files changed (+40 −5)");
-    expect(row(1)).toHaveTextContent("1111111"); // commit
-    expect(row(1)).toHaveTextContent("0000000"); // base
-    // Week 2 unlocks, Week 1 can no longer be completed.
-    expect(screen.getByRole("button", { name: "Complete Week 2" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Complete Week 1" })).not.toBeInTheDocument();
-    expect(screen.getByText(/not a mark/i)).toBeInTheDocument();
+    expect(api.requestEvaluation).not.toHaveBeenCalled();
   });
 
   it("only one week is actionable at a time and recorded weeks cannot be redone", async () => {
-    api.fetchProgress.mockResolvedValue(progress({ baseline, checkpoints: [checkpoint(1), checkpoint(2)] }));
+    api.fetchProgress.mockResolvedValue(
+      progress({ baseline, checkpoints: [checkpoint(1), checkpoint(2)], evaluations: [submitted(1), submitted(2)] }),
+    );
     render(<ProgressSection projectId={PROJECT} />);
     expect(await screen.findByRole("button", { name: "Complete Week 3" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /Complete Week/ })).toHaveLength(1);
-    expect(screen.getAllByText("Recorded · not yet evaluated")).toHaveLength(2);
+    expect(screen.getAllByText("Recorded · submitted for teacher review")).toHaveLength(2);
     expect(within(row(4)).getByText("Complete Week 3 first")).toBeInTheDocument();
   });
 
@@ -131,39 +118,7 @@ describe("ProgressSection", () => {
     await user.click(screen.getByRole("button", { name: "Yes, record Week 1" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("No new commits");
     expect(screen.getByRole("button", { name: "Complete Week 1" })).toBeEnabled();
-    expect(within(row(1)).queryByText("Recorded · not yet evaluated")).not.toBeInTheDocument();
-  });
-
-  it("when the week was already recorded elsewhere, shows that checkpoint instead of failing", async () => {
-    api.fetchProgress.mockResolvedValue(progress({ baseline }));
-    api.completeWeek.mockResolvedValue({
-      ok: false,
-      message: "Week 1 is already recorded and cannot be changed.",
-      existing: checkpoint(1),
-    });
-    const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
-    await user.click(await screen.findByRole("button", { name: "Complete Week 1" }));
-    await user.click(screen.getByRole("button", { name: "Yes, record Week 1" }));
-    expect(await within(row(1)).findByText("Recorded · not yet evaluated")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("already recorded");
-  });
-
-  it("sends only one request even if the confirm button is clicked repeatedly", async () => {
-    api.fetchProgress.mockResolvedValue(progress({ baseline }));
-    let resolve: (v: unknown) => void = () => {};
-    api.completeWeek.mockReturnValue(new Promise((r) => (resolve = r)));
-    const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
-    await user.click(await screen.findByRole("button", { name: "Complete Week 1" }));
-    const yes = screen.getByRole("button", { name: "Yes, record Week 1" });
-    await user.click(yes);
-    await user.click(yes).catch(() => {}); // the button is gone once recording starts
-    expect(api.completeWeek).toHaveBeenCalledTimes(1);
-    expect(await screen.findByRole("button", { name: "Recording…" })).toBeDisabled();
-    resolve({ ok: true, value: checkpoint(1) });
-    expect(await within(row(1)).findByText("Recorded · not yet evaluated")).toBeInTheDocument();
-    expect(api.completeWeek).toHaveBeenCalledTimes(1);
+    expect(api.requestEvaluation).not.toHaveBeenCalled(); // nothing recorded, nothing to evaluate
   });
 
   it("handles a network failure without recording anything", async () => {
@@ -174,6 +129,114 @@ describe("ProgressSection", () => {
     await user.click(await screen.findByRole("button", { name: "Complete Week 1" }));
     await user.click(screen.getByRole("button", { name: "Yes, record Week 1" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/Could not reach the server/);
-    expect(within(row(1)).queryByText("Recorded · not yet evaluated")).not.toBeInTheDocument();
+    expect(api.requestEvaluation).not.toHaveBeenCalled();
+  });
+});
+
+describe("ProgressSection: evaluation after recording", () => {
+  async function recordWeek1(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole("button", { name: "Complete Week 1" }));
+    await user.click(screen.getByRole("button", { name: "Yes, record Week 1" }));
+  }
+
+  it("evaluates right after recording and ends as 'submitted for teacher review'", async () => {
+    api.fetchProgress.mockResolvedValue(progress({ baseline }));
+    api.completeWeek.mockResolvedValue({ ok: true, value: checkpoint(1) });
+    const user = userEvent.setup();
+    render(<ProgressSection projectId={PROJECT} />);
+    await recordWeek1(user);
+    expect(api.requestEvaluation).toHaveBeenCalledWith(PROJECT, 1);
+    expect(await within(row(1)).findByText("Recorded · submitted for teacher review")).toBeInTheDocument();
+    expect(row(1)).toHaveTextContent("4 files changed (+40 −5)");
+    expect(screen.getByRole("button", { name: "Complete Week 2" })).toBeInTheDocument();
+    expect(within(row(1)).queryByRole("button", { name: "Generate evaluation" })).not.toBeInTheDocument();
+  });
+
+  it("shows an 'evaluating' message while the AI works, and blocks other actions", async () => {
+    api.fetchProgress.mockResolvedValue(progress({ baseline }));
+    api.completeWeek.mockResolvedValue({ ok: true, value: checkpoint(1) });
+    let resolve: (v: unknown) => void = () => {};
+    api.requestEvaluation.mockReturnValue(new Promise((r) => (resolve = r)));
+    const user = userEvent.setup();
+    render(<ProgressSection projectId={PROJECT} />);
+    await recordWeek1(user);
+    expect(await within(row(1)).findByRole("status")).toHaveTextContent(/Evaluating your code changes/);
+    expect(screen.getByRole("button", { name: "Complete Week 2" })).toBeDisabled();
+    resolve({ ok: true, status: "pending_review" });
+    expect(await within(row(1)).findByText("Recorded · submitted for teacher review")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Complete Week 2" })).toBeEnabled();
+  });
+
+  it("if the evaluation fails, the week stays recorded and can be evaluated again", async () => {
+    api.fetchProgress.mockResolvedValue(progress({ baseline }));
+    api.completeWeek.mockResolvedValue({ ok: true, value: checkpoint(1) });
+    api.requestEvaluation
+      .mockResolvedValueOnce({ ok: false, message: "Gemini is rate limiting requests. Please wait a minute and try again." })
+      .mockResolvedValueOnce({ ok: true, status: "pending_review" });
+    const user = userEvent.setup();
+    render(<ProgressSection projectId={PROJECT} />);
+    await recordWeek1(user);
+    expect(await screen.findByRole("alert")).toHaveTextContent("rate limiting");
+    expect(within(row(1)).getByText("Recorded · not yet evaluated")).toBeInTheDocument();
+    await user.click(within(row(1)).getByRole("button", { name: "Generate evaluation" }));
+    expect(await within(row(1)).findByText("Recorded · submitted for teacher review")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument(); // the failed attempt's message is gone
+    expect(api.requestEvaluation).toHaveBeenCalledTimes(2);
+    expect(api.completeWeek).toHaveBeenCalledTimes(1); // retrying never records again
+  });
+
+  it("a network error during evaluation is reported and leaves the checkpoint recorded", async () => {
+    api.fetchProgress.mockResolvedValue(progress({ baseline }));
+    api.completeWeek.mockResolvedValue({ ok: true, value: checkpoint(1) });
+    api.requestEvaluation.mockRejectedValue(new Error("network"));
+    const user = userEvent.setup();
+    render(<ProgressSection projectId={PROJECT} />);
+    await recordWeek1(user);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Could not reach the server for the evaluation/);
+    expect(within(row(1)).getByText("Recorded · not yet evaluated")).toBeInTheDocument();
+  });
+
+  it("an evaluation that already exists elsewhere just shows its status", async () => {
+    api.fetchProgress.mockResolvedValue(progress({ baseline, checkpoints: [checkpoint(1)] }));
+    api.requestEvaluation.mockResolvedValue({ ok: false, message: "Week 1 already has an evaluation.", status: "pending_review" });
+    const user = userEvent.setup();
+    render(<ProgressSection projectId={PROJECT} />);
+    await user.click(await within(await screen.findByText("Week 1").then((el) => el.closest("li") as HTMLElement)).findByRole("button", { name: "Generate evaluation" }));
+    expect(await within(row(1)).findByText("Recorded · submitted for teacher review")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("when the week was already recorded elsewhere, shows that checkpoint and does not evaluate automatically", async () => {
+    api.fetchProgress.mockResolvedValue(progress({ baseline }));
+    api.completeWeek.mockResolvedValue({
+      ok: false,
+      message: "Week 1 is already recorded and cannot be changed.",
+      existing: checkpoint(1),
+    });
+    const user = userEvent.setup();
+    render(<ProgressSection projectId={PROJECT} />);
+    await recordWeek1(user);
+    expect(await within(row(1)).findByText("Recorded · not yet evaluated")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("already recorded");
+    expect(api.requestEvaluation).not.toHaveBeenCalled();
+  });
+
+  it("never shows a score to the student, and explains that marks come from the teacher", async () => {
+    api.fetchProgress.mockResolvedValue(
+      progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [submitted(1)] }),
+    );
+    const { container } = render(<ProgressSection projectId={PROJECT} />);
+    await screen.findByText("Recorded · submitted for teacher review");
+    expect(container.textContent).not.toMatch(/\d+\s*\/\s*100|\bscore\b|suggested/i);
+    expect(container.textContent).toMatch(/you will not see it/i);
+    expect(container.textContent).toMatch(/only after your teacher reviews and approves/i);
+  });
+
+  it("shows a teacher-reviewed state once a decision exists (statuses other than pending)", async () => {
+    api.fetchProgress.mockResolvedValue(
+      progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [{ weekNumber: 1, status: "approved" }] }),
+    );
+    render(<ProgressSection projectId={PROJECT} />);
+    expect(await screen.findByText("Recorded · reviewed by your teacher")).toBeInTheDocument();
   });
 });

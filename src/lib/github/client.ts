@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { processDiffFiles, type DiffLimits, type ProcessedDiff } from "./diff";
+import { prioritizeFiles, processDiffFiles, type DiffLimits, type ProcessedDiff } from "./diff";
 import { GitHubError } from "./errors";
 import {
   CommitListSchema,
@@ -191,6 +191,8 @@ export function createGitHubClient(options: ClientOptions = {}) {
       base: string,
       head: string,
       limits?: DiffLimits,
+      /** Spend the size budget on source code before tests, docs and config. */
+      prioritize = false,
     ): Promise<CompareResult> {
       checkRepoName(owner, repo);
       const baseSha = base.toLowerCase();
@@ -227,7 +229,7 @@ export function createGitHubClient(options: ClientOptions = {}) {
       if (!first) throw new GitHubError("invalid_response");
       const firstPage = first;
 
-      const diff = processDiffFiles(files, limits);
+      const diff = processDiffFiles(prioritize ? prioritizeFiles(files) : files, limits);
       const status = (["ahead", "behind", "identical", "diverged"] as const).find(
         (s) => s === firstPage.status,
       );

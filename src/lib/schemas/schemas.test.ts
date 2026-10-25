@@ -123,6 +123,8 @@ describe("EvaluationSchema", () => {
     technicalConcerns: [],
     feedbackForNextWeek: ["Add tests"],
     confidence: { level: "medium", uncertainties: ["Small diff"] },
+    reviewScope: { filesChanged: 3, filesReviewed: 2, patchesTruncated: 0, notReviewed: [{ path: "logo.png", reason: "binary" }], filesBeyondLimit: 0, codeExecuted: false },
+    model: "gemini-2.5-flash",
     status: "pending_review",
     createdAt: now,
   };
@@ -136,6 +138,10 @@ describe("EvaluationSchema", () => {
       criteriaAssessments: [{ ...evaluation.criteriaAssessments[0], score: 11 }],
     };
     expect(EvaluationSchema.safeParse(over).success).toBe(false);
+  });
+  it("requires the not-executed flag to be false", () => {
+    const claimed = { ...evaluation, reviewScope: { ...evaluation.reviewScope, codeExecuted: true } };
+    expect(EvaluationSchema.safeParse(claimed).success).toBe(false);
   });
   it("rejects an unknown status", () => {
     expect(EvaluationSchema.safeParse({ ...evaluation, status: "done" }).success).toBe(false);

@@ -92,6 +92,32 @@ function binaryPath(path: string): boolean {
   return dot !== -1 && BINARY_EXTENSIONS.has(path.slice(dot + 1).toLowerCase());
 }
 
+const TEST_PATH =
+  /(^|\/)(tests?|__tests__|spec|specs)\/|\.(test|spec)\.[a-z]+$|(^|\/)test_[^/]+\.py$|_test\.(go|py)$/i;
+const CODE_EXTENSIONS = new Set([
+  "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "java", "kt", "swift", "go", "rs", "c", "h", "cpp",
+  "hpp", "cs", "rb", "php", "dart", "vue", "svelte", "sql", "sh", "ipynb", "html", "css", "scss",
+]);
+
+/** 0 = source code, 1 = tests, 2 = everything else (docs, config, data). */
+function priority(path: string): number {
+  if (TEST_PATH.test(path)) return 1;
+  const dot = path.lastIndexOf(".");
+  const extension = dot === -1 ? "" : path.slice(dot + 1).toLowerCase();
+  return CODE_EXTENSIONS.has(extension) ? 0 : 2;
+}
+
+/**
+ * Orders files so the size budget is spent on source code first, then tests, then
+ * docs and config. Order within each group is kept (stable sort).
+ */
+export function prioritizeFiles(files: CompareFile[]): CompareFile[] {
+  return files
+    .map((file, index) => ({ file, index, group: priority(file.filename) }))
+    .sort((a, b) => a.group - b.group || a.index - b.index)
+    .map(({ file }) => file);
+}
+
 /**
  * Turns GitHub's file list into a bounded, labelled set of changes. Text is only
  * ever read as data; nothing is executed. Every omission is recorded.

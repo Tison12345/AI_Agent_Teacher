@@ -123,6 +123,42 @@ export async function completeWeek(
     : { ok: false, message: `Request failed (${res.status}).` };
 }
 
+export type EvaluationStatus = "pending_review" | "approved" | "edited" | "rejected";
+export type EvaluationRequestResult =
+  | { ok: true; status: EvaluationStatus }
+  /** `status` is set when an evaluation already exists (the request changed nothing). */
+  | { ok: false; message: string; status?: EvaluationStatus };
+
+/**
+ * Asks the server to evaluate a recorded week (can take up to a minute). The reply
+ * carries the status only: the AI's score is never sent to the student's browser.
+ */
+export async function requestEvaluation(
+  projectId: string,
+  weekNumber: number,
+): Promise<EvaluationRequestResult> {
+  const res = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/weeks/${weekNumber}/evaluate`,
+    { method: "POST" },
+  );
+  if (res.ok) {
+    const body = z
+      .object({ evaluation: z.object({ status: z.enum(["pending_review", "approved", "edited", "rejected"]) }) })
+      .parse(await res.json());
+    return { ok: true, status: body.evaluation.status };
+  }
+  const body: unknown = await res.json().catch(() => null);
+  const parsed = z
+    .object({
+      error: z.object({ message: z.string() }),
+      status: z.enum(["pending_review", "approved", "edited", "rejected"]).nullable().optional(),
+    })
+    .safeParse(body);
+  return parsed.success
+    ? { ok: false, message: parsed.data.error.message, status: parsed.data.status ?? undefined }
+    : { ok: false, message: `Request failed (${res.status}).` };
+}
+
 export async function createProject(
   values: ProjectFormValues,
 ): Promise<{ result: ProjectSubmitResult; project?: Project }> {

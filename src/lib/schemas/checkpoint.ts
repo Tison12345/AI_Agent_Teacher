@@ -46,5 +46,14 @@ export type Checkpoint = z.infer<typeof CheckpointSchema>;
 export const ProgressSchema = z.object({
   baseline: BaselineSchema.nullable(),
   checkpoints: z.array(CheckpointSchema),
+  /** Evaluation state per week. Status only: the AI's score is never sent to students. */
+  evaluations: z
+    .array(
+      z.object({
+        weekNumber: z.number().int().min(1).max(PROJECT_DURATION_WEEKS),
+        status: z.enum(["pending_review", "approved", "edited", "rejected"]),
+      }),
+    )
+    .default([]),
 });
 export type Progress = z.infer<typeof ProgressSchema>;

@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { completeWeek, fetchProgress, recordBaseline } from "@/lib/api/client";
+import {
+  completeWeek,
+  fetchProgress,
+  recordBaseline,
+  requestEvaluation,
+  type EvaluationStatus,
+} from "@/lib/api/client";
 import type { Checkpoint, Progress } from "@/lib/schemas/checkpoint";
 import { PROJECT_DURATION_WEEKS } from "@/lib/validation/project";
 
@@ -18,6 +24,7 @@ export function ProgressSection({ projectId }: { projectId: string }) {
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState<"baseline" | number | null>(null);
   const [confirmWeek, setConfirmWeek] = useState<number | null>(null);
+  const [evaluating, setEvaluating] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,8 +51,41 @@ export function ProgressSection({ projectId }: { projectId: string }) {
     setAttempt((n) => n + 1);
   }
 
+  function setEvaluationStatus(week: number, status: EvaluationStatus) {
+    setLoad((prev) =>
+      prev.status === "ready"
+        ? {
+            status: "ready",
+            progress: {
+              ...prev.progress,
+              evaluations: [
+                ...prev.progress.evaluations.filter((e) => e.weekNumber !== week),
+                { weekNumber: week, status },
+              ],
+            },
+          }
+        : prev,
+    );
+  }
+
+  /** Evaluates a recorded week. Runs right after recording, and again on "Generate evaluation" if it failed. */
+  async function runEvaluation(week: number) {
+    setEvaluating(week);
+    setActionError(null);
+    try {
+      const result = await requestEvaluation(projectId, week);
+      if (result.ok) setEvaluationStatus(week, result.status);
+      else if (result.status) setEvaluationStatus(week, result.status);
+      else setActionError(result.message);
+    } catch {
+      setActionError("Could not reach the server for the evaluation. Please try again.");
+    } finally {
+      setEvaluating(null);
+    }
+  }
+
   async function handleBaseline() {
-    if (busy !== null) return;
+    if (busy !== null || evaluating !== null) return;
     setBusy("baseline");
     setActionError(null);
     try {
@@ -68,7 +108,7 @@ export function ProgressSection({ projectId }: { projectId: string }) {
   }
 
   async function handleComplete(week: number) {
-    if (busy !== null) return;
+    if (busy !== null || evaluating !== null) return;
     setBusy(week);
     setActionError(null);
     setConfirmWeek(null);
@@ -93,6 +133,10 @@ export function ProgressSection({ projectId }: { projectId: string }) {
         );
       } else {
         setActionError(result.message);
+      }
+      if (result.ok) {
+        setBusy(null);
+        await runEvaluation(week);
       }
     } catch {
       setActionError("Could not reach the server. Please try again.");
@@ -137,12 +181,13 @@ export function ProgressSection({ projectId }: { projectId: string }) {
           <Baseline
             baseline={load.progress.baseline}
             busy={busy === "baseline"}
-            disabled={busy !== null}
+            disabled={busy !== null || evaluating !== null}
             onRecord={handleBaseline}
           />
           <ol className="space-y-2">
             {WEEKS.map((week) => {
               const checkpoint = load.progress.checkpoints.find((c) => c.weekNumber === week);
+              const evaluation = load.progress.evaluations.find((e) => e.weekNumber === week);
               const previousDone =
                 week === 1 ? load.progress.baseline !== null : load.progress.checkpoints.some((c) => c.weekNumber === week - 1);
               return (
@@ -150,15 +195,31 @@ export function ProgressSection({ projectId }: { projectId: string }) {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-medium">Week {week}</span>
                     {checkpoint ? (
-                      <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900">
-                        Recorded · not yet evaluated
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900">
+                          {evaluation
+                            ? evaluation.status === "pending_review"
+                              ? "Recorded · submitted for teacher review"
+                              : "Recorded · reviewed by your teacher"
+                            : "Recorded · not yet evaluated"}
+                        </span>
+                        {!evaluation && evaluating !== week && (
+                          <button
+                            type="button"
+                            onClick={() => runEvaluation(week)}
+                            disabled={busy !== null || evaluating !== null}
+                            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Generate evaluation
+                          </button>
+                        )}
                       </span>
                     ) : previousDone ? (
                       confirmWeek === week ? null : (
                         <button
                           type="button"
                           onClick={() => setConfirmWeek(week)}
-                          disabled={busy !== null}
+                          disabled={busy !== null || evaluating !== null}
                           className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {busy === week ? "Recording…" : `Complete Week ${week}`}
@@ -172,6 +233,11 @@ export function ProgressSection({ projectId }: { projectId: string }) {
                   </div>
 
                   {checkpoint && <CheckpointDetails checkpoint={checkpoint} />}
+                  {evaluating === week && (
+                    <p role="status" className="mt-2 text-xs text-indigo-800">
+                      Evaluating your code changes… this can take up to a minute.
+                    </p>
+                  )}
 
                   {confirmWeek === week && !checkpoint && (
                     <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3" role="group" aria-label={`Confirm Week ${week}`}>
@@ -202,8 +268,9 @@ export function ProgressSection({ projectId }: { projectId: string }) {
             })}
           </ol>
           <p className="text-xs text-slate-500">
-            A recorded checkpoint only saves the commit you finished the week on. It is not a mark. Marks appear after
-            your teacher reviews and approves an evaluation.
+            A recorded checkpoint only saves the commit you finished the week on. After recording, your code changes are
+            reviewed by an AI and sent to your teacher. The AI&apos;s suggestion is not a mark, and you will not see it:
+            marks appear only after your teacher reviews and approves them.
           </p>
         </>
       )}

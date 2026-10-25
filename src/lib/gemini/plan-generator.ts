@@ -1,6 +1,4 @@
 import "server-only";
-import { ApiError } from "@google/genai";
-import { z } from "zod";
 import {
   CRITERIA_TOTAL_POINTS,
   GeneratedPlanSchema,
@@ -9,6 +7,7 @@ import {
 import { PROJECT_DURATION_WEEKS } from "@/lib/validation/project";
 import type { GeminiClient } from "./client";
 import { GeminiError } from "./errors";
+import { jsonForPrompt, parseModelJson, structuredSchema, summarizeIssues, toGeminiError } from "./shared";
 
 const REQUEST_TIMEOUT_MS = 55_000;
 const MAX_ATTEMPTS = 2;
@@ -55,8 +54,8 @@ Respond with JSON only.`;
 type ProjectInput = { title: string; description: string };
 
 function buildPrompt(project: ProjectInput, previousIssues?: string): string {
-  // JSON.stringify escapes quotes/newlines so student text stays inside the data block.
-  const data = JSON.stringify({
+  // Quotes, newlines and angle brackets are escaped so student text cannot close the data block.
+  const data = jsonForPrompt({
     title: project.title,
     description: project.description,
   });
@@ -66,69 +65,8 @@ function buildPrompt(project: ProjectInput, previousIssues?: string): string {
   return `<project_data>\n${data}\n</project_data>${retry}`;
 }
 
-// Size/range limits make Gemini reject the schema ("too many states for serving").
-// Gemini only gets the structure; GeneratedPlanSchema enforces every limit afterwards.
-const CONSTRAINT_KEYS = new Set([
-  "$schema",
-  "minLength",
-  "maxLength",
-  "minItems",
-  "maxItems",
-  "minimum",
-  "maximum",
-  "exclusiveMinimum",
-  "exclusiveMaximum",
-  "pattern",
-  "format",
-]);
-
-function stripConstraints(node: unknown): unknown {
-  if (Array.isArray(node)) return node.map(stripConstraints);
-  if (node && typeof node === "object") {
-    return Object.fromEntries(
-      Object.entries(node)
-        .filter(([key]) => !CONSTRAINT_KEYS.has(key))
-        .map(([key, value]) => [key, stripConstraints(value)]),
-    );
-  }
-  return node;
-}
-
 export function responseSchema(): unknown {
-  return stripConstraints(
-    z.toJSONSchema(GeneratedPlanSchema, { target: "draft-7", io: "input" }),
-  );
-}
-
-function parseModelJson(raw: string): unknown {
-  const trimmed = raw.trim();
-  const unfenced = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  return JSON.parse(unfenced);
-}
-
-function summarizeIssues(error: z.ZodError): string {
-  return error.issues
-    .slice(0, 5)
-    .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
-    .join("; ");
-}
-
-function toGeminiError(error: unknown): GeminiError {
-  if (error instanceof GeminiError) return error;
-  if (error instanceof ApiError) {
-    console.error("[gemini] API error, status", error.status);
-    if (error.status === 429) return new GeminiError("rate_limited");
-    if (error.status === 408 || error.status === 504) return new GeminiError("timeout");
-    if (error.status >= 500) return new GeminiError("unavailable");
-    return new GeminiError("rejected");
-  }
-  const name = error instanceof Error ? error.name : "";
-  const message = error instanceof Error ? error.message : "";
-  console.error("[gemini] request failed:", name, message.slice(0, 200));
-  if (/abort|timeout|timed out/i.test(`${name} ${message}`)) {
-    return new GeminiError("timeout");
-  }
-  return new GeminiError("unavailable");
+  return structuredSchema(GeneratedPlanSchema);
 }
 
 /**

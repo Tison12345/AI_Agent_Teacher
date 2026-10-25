@@ -15,6 +15,7 @@ vi.mock("@/lib/checkpoints/repository", async () => {
   state.db = memoryStore();
   return { checkpointStore: state.db.store };
 });
+vi.mock("@/lib/evaluation/repository", () => ({ evaluationStore: { listStatuses: async () => [] } }));
 vi.mock("@/lib/github/client", () => ({
   getGitHubClient: () => ({
     getRepository: async () => ({ default_branch: "main" }),
@@ -166,6 +167,7 @@ describe("GET /api/projects/[id]/progress", () => {
     expect(await (await getProgress(new Request("http://localhost/x"), project())).json()).toEqual({
       baseline: null,
       checkpoints: [],
+      evaluations: [],
     });
     await startProject();
     state.head = sha("1");
@@ -173,6 +175,7 @@ describe("GET /api/projects/[id]/progress", () => {
     const body = await (await getProgress(new Request("http://localhost/x"), project())).json();
     expect(body.baseline.commitSha).toBe(sha("0"));
     expect(body.checkpoints).toHaveLength(1);
-    expect(JSON.stringify(body)).not.toMatch(/score|approved|evaluation/i);
+    expect(body.evaluations).toEqual([]); // statuses only
+    expect(JSON.stringify(body)).not.toMatch(/score|approved|suggested/i);
   });
 });
