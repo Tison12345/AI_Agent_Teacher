@@ -1,0 +1,261 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { completeWeek, fetchProgress, recordBaseline } from "@/lib/api/client";
+import type { Checkpoint, Progress } from "@/lib/schemas/checkpoint";
+import { PROJECT_DURATION_WEEKS } from "@/lib/validation/project";
+
+type Load =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; progress: Progress };
+
+const WEEKS = Array.from({ length: PROJECT_DURATION_WEEKS }, (_, i) => i + 1);
+const short = (sha: string) => sha.slice(0, 7);
+
+export function ProgressSection({ projectId }: { projectId: string }) {
+  const [load, setLoad] = useState<Load>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const [busy, setBusy] = useState<"baseline" | number | null>(null);
+  const [confirmWeek, setConfirmWeek] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchProgress(projectId).then(
+      (progress) => {
+        if (!cancelled) setLoad({ status: "ready", progress });
+      },
+      (error: unknown) => {
+        if (cancelled) return;
+        setLoad({
+          status: "error",
+          message: error instanceof Error ? error.message : "Could not load progress.",
+        });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, attempt]);
+
+  function reload() {
+    setLoad({ status: "loading" });
+    setAttempt((n) => n + 1);
+  }
+
+  async function handleBaseline() {
+    if (busy !== null) return;
+    setBusy("baseline");
+    setActionError(null);
+    try {
+      const result = await recordBaseline(projectId);
+      if (result.ok) {
+        setLoad((prev) =>
+          prev.status === "ready"
+            ? { status: "ready", progress: { ...prev.progress, baseline: result.value } }
+            : prev,
+        );
+      } else {
+        setActionError(result.message);
+        reload(); // the state may have changed elsewhere (e.g. already recorded)
+      }
+    } catch {
+      setActionError("Could not reach the server. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleComplete(week: number) {
+    if (busy !== null) return;
+    setBusy(week);
+    setActionError(null);
+    setConfirmWeek(null);
+    try {
+      const result = await completeWeek(projectId, week);
+      if (result.ok || result.existing) {
+        const checkpoint = result.ok ? result.value : result.existing!;
+        if (!result.ok) setActionError(result.message);
+        setLoad((prev) =>
+          prev.status === "ready"
+            ? {
+                status: "ready",
+                progress: {
+                  ...prev.progress,
+                  checkpoints: [
+                    ...prev.progress.checkpoints.filter((c) => c.weekNumber !== week),
+                    checkpoint,
+                  ].sort((a, b) => a.weekNumber - b.weekNumber),
+                },
+              }
+            : prev,
+        );
+      } else {
+        setActionError(result.message);
+      }
+    } catch {
+      setActionError("Could not reach the server. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section aria-labelledby="progress-heading" className="space-y-3">
+      <h2 id="progress-heading" className="text-lg font-semibold">
+        Weekly progress
+      </h2>
+
+      {load.status === "loading" && (
+        <p role="status" className="text-slate-600">
+          Loading progress…
+        </p>
+      )}
+
+      {load.status === "error" && (
+        <div role="alert" className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+          <p>Could not load progress: {load.message}</p>
+          <button
+            type="button"
+            onClick={reload}
+            className="mt-2 rounded-md border border-red-400 px-3 py-1 font-medium hover:bg-red-100"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
+      {actionError && (
+        <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+          {actionError}
+        </p>
+      )}
+
+      {load.status === "ready" && (
+        <>
+          <Baseline
+            baseline={load.progress.baseline}
+            busy={busy === "baseline"}
+            disabled={busy !== null}
+            onRecord={handleBaseline}
+          />
+          <ol className="space-y-2">
+            {WEEKS.map((week) => {
+              const checkpoint = load.progress.checkpoints.find((c) => c.weekNumber === week);
+              const previousDone =
+                week === 1 ? load.progress.baseline !== null : load.progress.checkpoints.some((c) => c.weekNumber === week - 1);
+              return (
+                <li key={week} className="rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">Week {week}</span>
+                    {checkpoint ? (
+                      <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900">
+                        Recorded · not yet evaluated
+                      </span>
+                    ) : previousDone ? (
+                      confirmWeek === week ? null : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmWeek(week)}
+                          disabled={busy !== null}
+                          className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {busy === week ? "Recording…" : `Complete Week ${week}`}
+                        </button>
+                      )
+                    ) : (
+                      <span className="text-xs text-slate-500">
+                        {week === 1 ? "Record your starting point first" : `Complete Week ${week - 1} first`}
+                      </span>
+                    )}
+                  </div>
+
+                  {checkpoint && <CheckpointDetails checkpoint={checkpoint} />}
+
+                  {confirmWeek === week && !checkpoint && (
+                    <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3" role="group" aria-label={`Confirm Week ${week}`}>
+                      <p className="text-amber-950">
+                        Record Week {week} now? We will save the latest commit you have pushed to GitHub. Push all your
+                        work first. This cannot be undone.
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleComplete(week)}
+                          className="rounded-md bg-indigo-700 px-3 py-1.5 font-medium text-white hover:bg-indigo-800"
+                        >
+                          Yes, record Week {week}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmWeek(null)}
+                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+          <p className="text-xs text-slate-500">
+            A recorded checkpoint only saves the commit you finished the week on. It is not a mark. Marks appear after
+            your teacher reviews and approves an evaluation.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+function Baseline({
+  baseline,
+  busy,
+  disabled,
+  onRecord,
+}: {
+  baseline: Progress["baseline"];
+  busy: boolean;
+  disabled: boolean;
+  onRecord: () => void;
+}) {
+  if (baseline) {
+    return (
+      <p className="rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm">
+        <span className="font-medium">Starting point:</span> commit{" "}
+        <code className="rounded bg-slate-100 px-1">{short(baseline.commitSha)}</code> on {baseline.branch}, recorded{" "}
+        {new Date(baseline.recordedAt).toLocaleString()}.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2 rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm">
+      <p className="text-slate-700">
+        Before Week 1, record your starting point. We save the latest commit on your repository&apos;s default branch.
+        Week 1 is compared against it, so do this before you start your project work. It cannot be changed later.
+      </p>
+      <button
+        type="button"
+        onClick={onRecord}
+        disabled={disabled}
+        className="rounded-md bg-indigo-700 px-4 py-2 font-medium text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {busy ? "Recording…" : "Record starting point"}
+      </button>
+    </div>
+  );
+}
+
+function CheckpointDetails({ checkpoint }: { checkpoint: Checkpoint }) {
+  return (
+    <p className="mt-2 text-xs text-slate-600">
+      Recorded {new Date(checkpoint.recordedAt).toLocaleString()} · commit{" "}
+      <code className="rounded bg-slate-100 px-1">{short(checkpoint.commitSha)}</code> · {checkpoint.filesChanged}{" "}
+      {checkpoint.filesChanged === 1 ? "file" : "files"} changed (+{checkpoint.additions} −{checkpoint.deletions}) since{" "}
+      <code className="rounded bg-slate-100 px-1">{short(checkpoint.baseCommitSha)}</code>
+    </p>
+  );
+}

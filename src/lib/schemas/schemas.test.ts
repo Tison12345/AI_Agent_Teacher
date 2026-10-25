@@ -81,16 +81,24 @@ describe("CheckpointSchema", () => {
     projectId: uuid2,
     weekNumber: 1,
     commitSha: sha,
-    baseCommitSha: null,
+    baseCommitSha: "b".repeat(40),
+    branch: "main",
+    filesChanged: 3,
+    additions: 10,
+    deletions: 2,
     recordedAt: now,
   };
   it("accepts a valid checkpoint", () => {
     expect(CheckpointSchema.safeParse(checkpoint).success).toBe(true);
   });
-  it("rejects short/uppercase SHAs and week 13", () => {
+  it("requires a base commit (no null base any more)", () => {
+    expect(CheckpointSchema.safeParse({ ...checkpoint, baseCommitSha: null }).success).toBe(false);
+  });
+  it("rejects short/uppercase SHAs, week 13 and negative counts", () => {
     expect(CheckpointSchema.safeParse({ ...checkpoint, commitSha: "abc123" }).success).toBe(false);
     expect(CheckpointSchema.safeParse({ ...checkpoint, commitSha: "A".repeat(40) }).success).toBe(false);
     expect(CheckpointSchema.safeParse({ ...checkpoint, weekNumber: 13 }).success).toBe(false);
+    expect(CheckpointSchema.safeParse({ ...checkpoint, additions: -1 }).success).toBe(false);
   });
 });
 

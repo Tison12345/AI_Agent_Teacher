@@ -1,6 +1,15 @@
 import { z } from "zod";
 import type { ProjectSubmitResult } from "@/components/ProjectForm";
 import { ProjectSchema, type Project } from "@/lib/schemas/project";
+import {
+  BaselineSchema,
+  CheckpointSchema,
+  ProgressSchema,
+  type Baseline,
+  type Checkpoint,
+  type Progress,
+} from "@/lib/schemas/checkpoint";
+import { RepoInfoSchema, type RepoInfo } from "@/lib/schemas/repo-info";
 import { StoredPlanSchema, type StoredPlan } from "@/lib/schemas/weekly-plan";
 import type {
   ProjectFormErrors,
@@ -56,6 +65,62 @@ export async function generatePlan(projectId: string): Promise<StoredPlan> {
   });
   if (!res.ok) throw new Error(await readError(res));
   return z.object({ plan: StoredPlanSchema }).parse(await res.json()).plan;
+}
+
+/** Asks the server to look at the project's GitHub repository (read-only). */
+export async function fetchRepoInfo(projectId: string): Promise<RepoInfo> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/repo`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return RepoInfoSchema.parse(await res.json());
+}
+
+export async function fetchProgress(projectId: string): Promise<Progress> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/progress`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return ProgressSchema.parse(await res.json());
+}
+
+export type ActionResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; message: string; existing?: Checkpoint };
+
+/** Records the starting point (once). */
+export async function recordBaseline(projectId: string): Promise<ActionResult<Baseline>> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/baseline`, {
+    method: "POST",
+  });
+  if (!res.ok) return { ok: false, message: await readError(res) };
+  const body = z.object({ baseline: BaselineSchema }).parse(await res.json());
+  return { ok: true, value: body.baseline };
+}
+
+/** "Complete Week": records the latest pushed commit as this week's checkpoint. */
+export async function completeWeek(
+  projectId: string,
+  weekNumber: number,
+): Promise<ActionResult<Checkpoint>> {
+  const res = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/weeks/${weekNumber}/complete`,
+    { method: "POST" },
+  );
+  if (res.ok) {
+    const body = z.object({ checkpoint: CheckpointSchema }).parse(await res.json());
+    return { ok: true, value: body.checkpoint };
+  }
+  const body: unknown = await res.json().catch(() => null);
+  const parsed = z
+    .object({
+      error: z.object({ message: z.string() }),
+      checkpoint: CheckpointSchema.optional(),
+    })
+    .safeParse(body);
+  return parsed.success
+    ? { ok: false, message: parsed.data.error.message, existing: parsed.data.checkpoint }
+    : { ok: false, message: `Request failed (${res.status}).` };
 }
 
 export async function createProject(

@@ -9,7 +9,8 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:live": "node scripts/run-live-tests.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.31.0",
