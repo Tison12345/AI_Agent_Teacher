@@ -6,6 +6,7 @@ import type { Project } from "@/lib/schemas/project";
 const api = vi.hoisted(() => ({
   fetchProjects: vi.fn(),
   createProject: vi.fn(),
+  fetchResults: vi.fn(),
 }));
 vi.mock("@/lib/api/client", () => api);
 
@@ -20,7 +21,10 @@ const project: Project = {
   createdAt: "2026-10-25T12:00:00+00:00",
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  api.fetchResults.mockResolvedValue([]);
+});
 
 describe("ProjectsPanel", () => {
   it("shows a loading state, then the empty state", async () => {

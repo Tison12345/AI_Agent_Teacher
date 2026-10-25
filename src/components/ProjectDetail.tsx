@@ -80,8 +80,8 @@ export function ProjectDetail({ id }: { id: string }) {
         </article>
       )}
       {state.status === "ready" && <RepoSection projectId={state.project.id} />}
-      {state.status === "ready" && <ProgressSection projectId={state.project.id} />}
-      {state.status === "ready" && <PlanSection projectId={state.project.id} />}
+      {state.status === "ready" && <ProgressSection projectId={state.project.id} durationWeeks={state.project.durationWeeks} />}
+      {state.status === "ready" && <PlanSection projectId={state.project.id} durationWeeks={state.project.durationWeeks} />}
     </div>
   );
 }

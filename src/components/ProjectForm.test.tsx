@@ -21,15 +21,46 @@ const okSubmit = () =>
   vi.fn<() => Promise<ProjectSubmitResult>>().mockResolvedValue({ ok: true });
 
 describe("ProjectForm", () => {
-  it("renders only title, description, repo URL and fixed duration", () => {
+  it("renders title, description, repo URL and an editable duration", () => {
     render(<ProjectForm onSubmit={okSubmit()} />);
     expect(screen.getAllByLabelText("Project title")).toHaveLength(1);
     expect(screen.queryByLabelText("Project topic")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Short project description")).toBeInTheDocument();
     expect(screen.getByLabelText("GitHub repository URL")).toBeInTheDocument();
-    const duration = screen.getByLabelText("Project duration");
-    expect(duration).toHaveValue("12 weeks");
-    expect(duration).toHaveAttribute("readonly");
+    const duration = screen.getByLabelText("Project duration (weeks)");
+    expect(duration).toHaveValue(12); // a sensible default, not a fixed value
+    expect(duration).not.toHaveAttribute("readonly");
+    expect(duration).toHaveAttribute("min", "1");
+    expect(duration).toHaveAttribute("max", "16");
+  });
+
+  it("submits the duration the user chose", async () => {
+    const onSubmit = okSubmit();
+    const user = userEvent.setup();
+    render(<ProjectForm onSubmit={onSubmit} />);
+    await fillValid(user);
+    const duration = screen.getByLabelText("Project duration (weeks)");
+    await user.clear(duration);
+    await user.type(duration, "4");
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ durationWeeks: 4 }));
+    // After a successful create the form starts again from the default.
+    expect(await screen.findByRole("status")).toHaveTextContent(/Project created/);
+    expect(screen.getByLabelText("Project duration (weeks)")).toHaveValue(12);
+  });
+
+  it.each(["0", "17", "", "-3"])("refuses a duration of %j without submitting", async (text) => {
+    const onSubmit = okSubmit();
+    const user = userEvent.setup();
+    render(<ProjectForm onSubmit={onSubmit} />);
+    await fillValid(user);
+    const duration = screen.getByLabelText("Project duration (weeks)");
+    await user.clear(duration);
+    if (text) await user.type(duration, text);
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(/weeks|number/i);
+    expect(duration).toHaveAttribute("aria-invalid", "true");
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("shows required-field errors and does not submit when empty", async () => {

@@ -46,4 +46,26 @@ describe.skipIf(!configured)("projects repository (live Supabase)", () => {
       }),
     ).rejects.toMatchObject({ code: "db_error" });
   });
+
+  // Needs migration 0006_variable_duration.sql.
+  it.each([1, 4, 16])("stores a project of %i weeks", async (durationWeeks) => {
+    const created = await createProject({
+      title: `Live ${durationWeeks}-week test`,
+      description: "Created by the automated live test; safe to delete.",
+      repoUrl: "https://github.com/octocat/hello-world",
+      durationWeeks,
+    });
+    createdIds.push(created.id);
+    expect((await getProject(created.id))?.durationWeeks).toBe(durationWeeks);
+  });
+
+  it.each([0, 17])("the database refuses a duration of %i weeks", async (duration_weeks) => {
+    const { error } = await getSupabase().from("projects").insert({
+      title: "Live bad duration",
+      description: "Created by the automated live test; safe to delete.",
+      repo_url: "https://github.com/octocat/hello-world",
+      duration_weeks,
+    });
+    expect(error).not.toBeNull();
+  });
 });

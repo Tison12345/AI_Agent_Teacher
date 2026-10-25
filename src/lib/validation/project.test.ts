@@ -5,6 +5,7 @@ const valid = {
   title: "Smart Attendance",
   description: "A system that marks attendance using face recognition.",
   repoUrl: "https://github.com/octocat/hello-world",
+  durationWeeks: "12",
 };
 
 describe("parseGitHubRepoUrl", () => {
@@ -33,10 +34,24 @@ describe("parseGitHubRepoUrl", () => {
 });
 
 describe("validateProjectForm", () => {
-  it("accepts valid input and fixes duration at 12 weeks", () => {
+  it("accepts valid input and reads the duration as a number", () => {
     const result = validateProjectForm(valid);
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.durationWeeks).toBe(12);
+  });
+
+  it.each([["1", 1], ["4", 4], [" 8 ", 8], ["16", 16]])("accepts a duration of %j weeks", (text, weeks) => {
+    const result = validateProjectForm({ ...valid, durationWeeks: text });
+    expect(result.success && result.data.durationWeeks).toBe(weeks);
+  });
+
+  it.each(["", "  ", "0", "17", "-2", "1.5", "abc", "4 weeks", "1e1"])("rejects a duration of %j", (text) => {
+    const result = validateProjectForm({ ...valid, durationWeeks: text });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.errors.durationWeeks).toMatch(/weeks|number/i);
+      expect(result.errors.title).toBeUndefined();
+    }
   });
 
   it("trims whitespace", () => {
@@ -49,6 +64,7 @@ describe("validateProjectForm", () => {
       title: "",
       description: "",
       repoUrl: "",
+      durationWeeks: "12",
     });
     expect(result.success).toBe(false);
     if (!result.success) {

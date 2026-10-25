@@ -31,14 +31,24 @@ beforeEach(() => vi.clearAllMocks());
 describe("PlanSection", () => {
   it("shows loading, then the empty state with a generate button", async () => {
     api.fetchPlan.mockResolvedValue(null);
-    render(<PlanSection projectId={id} />);
+    render(<PlanSection projectId={id} durationWeeks={12} />);
     expect(screen.getByText("Loading plan…")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Generate plan" })).toBeInTheDocument();
   });
 
+  it("names the plan after the project's own length", async () => {
+    api.fetchPlan.mockResolvedValue(null);
+    const { unmount } = render(<PlanSection projectId={id} durationWeeks={4} />);
+    expect(await screen.findByRole("heading", { name: "4-week plan" })).toBeInTheDocument();
+    expect(screen.getByText(/Generate a 4-week plan/)).toBeInTheDocument();
+    unmount();
+    render(<PlanSection projectId={id} durationWeeks={12} />);
+    expect(await screen.findByRole("heading", { name: "12-week plan" })).toBeInTheDocument();
+  });
+
   it("renders all 12 weeks of an existing plan", async () => {
     api.fetchPlan.mockResolvedValue(plan);
-    render(<PlanSection projectId={id} />);
+    render(<PlanSection projectId={id} durationWeeks={12} />);
     expect(await screen.findByText("Week 12: Title 12")).toBeInTheDocument();
     expect(screen.getAllByRole("listitem").length).toBeGreaterThanOrEqual(12);
     expect(screen.queryByRole("button", { name: "Generate plan" })).not.toBeInTheDocument();
@@ -49,7 +59,7 @@ describe("PlanSection", () => {
     let resolve: (p: StoredPlan) => void = () => {};
     api.generatePlan.mockReturnValue(new Promise<StoredPlan>((r) => (resolve = r)));
     const user = userEvent.setup();
-    render(<PlanSection projectId={id} />);
+    render(<PlanSection projectId={id} durationWeeks={12} />);
     await user.click(await screen.findByRole("button", { name: "Generate plan" }));
     expect(screen.getByRole("status")).toHaveTextContent(/Generating your plan/);
     expect(screen.queryByRole("button", { name: "Generate plan" })).not.toBeInTheDocument();
@@ -64,7 +74,7 @@ describe("PlanSection", () => {
       .mockRejectedValueOnce(new Error("Gemini is rate limiting requests."))
       .mockResolvedValueOnce(plan);
     const user = userEvent.setup();
-    render(<PlanSection projectId={id} />);
+    render(<PlanSection projectId={id} durationWeeks={12} />);
     await user.click(await screen.findByRole("button", { name: "Generate plan" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Gemini is rate limiting requests.");
     await user.click(screen.getByRole("button", { name: "Try again" }));
@@ -74,7 +84,7 @@ describe("PlanSection", () => {
   it("shows a load error with retry", async () => {
     api.fetchPlan.mockRejectedValueOnce(new Error("Storage is not configured.")).mockResolvedValueOnce(plan);
     const user = userEvent.setup();
-    render(<PlanSection projectId={id} />);
+    render(<PlanSection projectId={id} durationWeeks={12} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Storage is not configured.");
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("Week 1: Title 1")).toBeInTheDocument();

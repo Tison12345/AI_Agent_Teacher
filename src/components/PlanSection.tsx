@@ -12,7 +12,7 @@ type State =
   | { status: "generate_error"; message: string }
   | { status: "ready"; plan: StoredPlan };
 
-export function PlanSection({ projectId }: { projectId: string }) {
+export function PlanSection({ projectId, durationWeeks }: { projectId: string; durationWeeks: number }) {
   const [state, setState] = useState<State>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -56,7 +56,7 @@ export function PlanSection({ projectId }: { projectId: string }) {
   return (
     <section aria-labelledby="plan-heading" className="space-y-3">
       <h2 id="plan-heading" className="text-lg font-semibold">
-        12-week plan
+        {durationWeeks}-week plan
       </h2>
 
       {state.status === "loading" && (
@@ -81,7 +81,7 @@ export function PlanSection({ projectId }: { projectId: string }) {
       {(state.status === "empty" || state.status === "generate_error") && (
         <div className="space-y-3 rounded-lg border border-dashed border-slate-300 bg-white p-6">
           <p className="text-slate-600">
-            No plan yet. Generate a 12-week plan from your project description.
+            No plan yet. Generate a {durationWeeks}-week plan from your project description.
           </p>
           {state.status === "generate_error" && (
             <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">

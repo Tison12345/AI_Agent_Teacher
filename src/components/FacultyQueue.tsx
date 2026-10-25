@@ -118,6 +118,11 @@ export function FacultyQueue() {
                   AI suggestion (not official): {item.suggestedScore}/100 · confidence {item.confidence} · created{" "}
                   {new Date(item.createdAt).toLocaleString()}
                 </p>
+                {item.status !== "pending_review" && (
+                  <p className="text-xs font-medium text-emerald-900">
+                    {item.officialScore === null ? "No official score" : `Official score: ${item.officialScore}/100`}
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-800">

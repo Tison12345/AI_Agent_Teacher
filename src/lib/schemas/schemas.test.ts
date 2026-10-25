@@ -3,7 +3,7 @@ import { CheckpointSchema } from "./checkpoint";
 import { EvaluationSchema } from "./evaluation";
 import { ProjectSchema } from "./project";
 import { TeacherDecisionSchema } from "./teacher-decision";
-import { GeneratedPlanSchema, WeeklyPlanSchema, type WeeklyPlanItem } from "./weekly-plan";
+import { generatedPlanSchema, WeeklyPlanSchema, type WeeklyPlanItem } from "./weekly-plan";
 
 const uuid = "123e4567-e89b-42d3-a456-426614174000";
 const uuid2 = "223e4567-e89b-42d3-a456-426614174000";
@@ -34,19 +34,27 @@ describe("ProjectSchema", () => {
   it("accepts a valid project", () => {
     expect(ProjectSchema.safeParse(project).success).toBe(true);
   });
-  it("rejects a duration other than 12 and a bad id", () => {
-    expect(ProjectSchema.safeParse({ ...project, durationWeeks: 8 }).success).toBe(false);
+  it.each([1, 4, 12, 16])("accepts a duration of %i weeks", (durationWeeks) => {
+    expect(ProjectSchema.safeParse({ ...project, durationWeeks }).success).toBe(true);
+  });
+  it.each([0, -3, 17, 99, 1.5, "8"])("rejects a duration of %j and a bad id", (durationWeeks) => {
+    expect(ProjectSchema.safeParse({ ...project, durationWeeks }).success).toBe(false);
     expect(ProjectSchema.safeParse({ ...project, id: "nope" }).success).toBe(false);
   });
 });
 
 describe("WeeklyPlanSchema", () => {
   const plan = Array.from({ length: 12 }, (_, i) => week(i + 1));
-  it("accepts exactly 12 ordered weeks", () => {
-    expect(WeeklyPlanSchema.safeParse(plan).success).toBe(true);
+  it("accepts ordered weeks for any project length from 1 to 16", () => {
+    for (const n of [1, 3, 4, 11, 12, 16]) {
+      const items = Array.from({ length: n }, (_, i) => week(i + 1));
+      expect(WeeklyPlanSchema.safeParse(items).success, `${n} weeks`).toBe(true);
+    }
   });
-  it("rejects 11 weeks, wrong order and empty tasks", () => {
-    expect(WeeklyPlanSchema.safeParse(plan.slice(0, 11)).success).toBe(false);
+  it("rejects no weeks, more than 16, wrong order and empty tasks", () => {
+    expect(WeeklyPlanSchema.safeParse([]).success).toBe(false);
+    expect(WeeklyPlanSchema.safeParse(Array.from({ length: 17 }, (_, i) => week(i + 1))).success).toBe(false);
+    expect(WeeklyPlanSchema.safeParse(plan.slice(1)).success).toBe(false); // does not start at week 1
     expect(WeeklyPlanSchema.safeParse([...plan].reverse()).success).toBe(false);
     const empty = plan.map((w, i) => (i === 0 ? { ...w, tasks: [] } : w));
     expect(WeeklyPlanSchema.safeParse(empty).success).toBe(false);
@@ -71,7 +79,7 @@ describe("stored vs. generated plan shapes", () => {
     expect(WeeklyPlanSchema.safeParse(oldPlan).success).toBe(true);
   });
   it("requires the simplified shape for newly generated plans", () => {
-    expect(GeneratedPlanSchema.safeParse(oldPlan).success).toBe(false);
+    expect(generatedPlanSchema(12).safeParse(oldPlan).success).toBe(false);
   });
 });
 
@@ -94,10 +102,10 @@ describe("CheckpointSchema", () => {
   it("requires a base commit (no null base any more)", () => {
     expect(CheckpointSchema.safeParse({ ...checkpoint, baseCommitSha: null }).success).toBe(false);
   });
-  it("rejects short/uppercase SHAs, week 13 and negative counts", () => {
+  it("rejects short/uppercase SHAs, week 17 and negative counts", () => {
     expect(CheckpointSchema.safeParse({ ...checkpoint, commitSha: "abc123" }).success).toBe(false);
     expect(CheckpointSchema.safeParse({ ...checkpoint, commitSha: "A".repeat(40) }).success).toBe(false);
-    expect(CheckpointSchema.safeParse({ ...checkpoint, weekNumber: 13 }).success).toBe(false);
+    expect(CheckpointSchema.safeParse({ ...checkpoint, weekNumber: 17 }).success).toBe(false);
     expect(CheckpointSchema.safeParse({ ...checkpoint, additions: -1 }).success).toBe(false);
   });
 });

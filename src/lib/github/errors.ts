@@ -47,7 +47,9 @@ function buildMessage(
       : "Repository not found. If it is private, ask your teacher to configure repository access.";
   }
   if (code === "rate_limited" && options.resetAt) {
-    return `${MESSAGES.rate_limited} It resets at ${options.resetAt}.`;
+    const reset = new Date(options.resetAt);
+    const when = Number.isNaN(reset.getTime()) ? options.resetAt : `${reset.toISOString().slice(11, 16)} UTC`;
+    return `${MESSAGES.rate_limited} It resets at ${when}.`;
   }
   return MESSAGES[code];
 }

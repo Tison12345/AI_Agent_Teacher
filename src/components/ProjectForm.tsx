@@ -2,7 +2,9 @@
 
 import { useState, type FormEvent, type ReactNode } from "react";
 import {
-  PROJECT_DURATION_WEEKS,
+  DEFAULT_DURATION_WEEKS,
+  MAX_DURATION_WEEKS,
+  MIN_DURATION_WEEKS,
   validateProjectForm,
   type ProjectFormErrors,
   type ProjectFormField,
@@ -13,6 +15,7 @@ const emptyValues: Record<ProjectFormField, string> = {
   title: "",
   description: "",
   repoUrl: "",
+  durationWeeks: String(DEFAULT_DURATION_WEEKS),
 };
 
 const inputClass =
@@ -172,25 +175,27 @@ export function ProjectForm({ onSubmit }: ProjectFormProps) {
         )}
       </Field>
 
-      <div>
-        <label
-          htmlFor="duration"
-          className="block text-sm font-medium text-slate-800"
-        >
-          Project duration
-        </label>
-        <input
-          id="duration"
-          name="duration"
-          type="text"
-          readOnly
-          value={`${PROJECT_DURATION_WEEKS} weeks`}
-          className={`${inputClass} bg-slate-100 text-slate-600`}
-        />
-        <p className="mt-1 text-xs text-slate-500">
-          Fixed at {PROJECT_DURATION_WEEKS} weeks for the MVP.
-        </p>
-      </div>
+      <Field
+        id="durationWeeks"
+        label="Project duration (weeks)"
+        error={errors.durationWeeks}
+        hint={`Choose from ${MIN_DURATION_WEEKS} to ${MAX_DURATION_WEEKS} weeks. The plan will have one entry per week.`}
+      >
+        {(a11y) => (
+          <input
+            {...a11y}
+            name="durationWeeks"
+            type="number"
+            inputMode="numeric"
+            min={MIN_DURATION_WEEKS}
+            max={MAX_DURATION_WEEKS}
+            step={1}
+            className={inputClass}
+            value={values.durationWeeks}
+            onChange={(e) => update("durationWeeks", e.target.value)}
+          />
+        )}
+      </Field>
 
       <div className="flex flex-wrap gap-3">
         <button

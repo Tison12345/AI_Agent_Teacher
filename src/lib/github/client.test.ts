@@ -126,7 +126,7 @@ describe("error mapping", () => {
       "x-ratelimit-reset": "1800000000",
     });
     expect(error).toMatchObject({ code: "rate_limited" });
-    expect(error.message).toContain("2027-01-15T08:00:00.000Z");
+    expect(error.message).toContain("It resets at 08:00 UTC.");
   });
 
   it("403 secondary rate limit (retry-after) -> rate_limited", async () => {

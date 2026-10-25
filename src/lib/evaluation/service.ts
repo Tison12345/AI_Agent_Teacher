@@ -12,7 +12,7 @@ export type EvaluationErrorCode = "checkpoint_required" | "plan_required" | "eva
 
 const MESSAGES: Record<EvaluationErrorCode, (week: number) => string> = {
   checkpoint_required: (week) => `Record Week ${week} first. An evaluation is made from the recorded checkpoint.`,
-  plan_required: () => "This project has no 12-week plan yet. Generate the plan first, because the evaluation uses its tasks and criteria.",
+  plan_required: () => "This project has no weekly plan yet. Generate the plan first, because the evaluation uses its tasks and criteria.",
   evaluation_exists: (week) => `Week ${week} already has an evaluation and it cannot be replaced.`,
 };
 

@@ -20,6 +20,7 @@ export function errorResponse(
 const GEMINI_STATUS: Record<GeminiErrorCode, number> = {
   not_configured: 503,
   rate_limited: 429,
+  quota_exhausted: 429,
   rejected: 502,
   unavailable: 502,
   timeout: 504,

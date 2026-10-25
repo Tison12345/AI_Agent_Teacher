@@ -45,6 +45,8 @@ export const QueueItemSchema = z.object({
   weekNumber: z.number().int(),
   status: z.enum(EVALUATION_STATUSES),
   suggestedScore: z.number(),
+  /** The teacher's official score; null while waiting for review, and for a rejection. */
+  officialScore: z.number().nullable(),
   confidence: z.enum(["low", "medium", "high"]),
   createdAt: z.iso.datetime({ offset: true }),
 });

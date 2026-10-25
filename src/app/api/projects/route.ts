@@ -1,7 +1,7 @@
 import { errorResponse, handleUnexpected } from "@/lib/api/errors";
 import { createProject, listProjects } from "@/lib/projects/repository";
 import {
-  PROJECT_DURATION_WEEKS,
+  DEFAULT_DURATION_WEEKS,
   projectFormSchema,
 } from "@/lib/validation/project";
 
@@ -21,11 +21,16 @@ export async function POST(request: Request) {
     return errorResponse(400, "invalid_json", "Request body must be valid JSON.");
   }
 
-  // Server-side validation; duration is always forced to the fixed MVP value.
+  // Server-side validation. The duration is validated like every other field; when it
+  // is omitted, the default applies.
   const raw = typeof body === "object" && body !== null ? body : {};
   const parsed = projectFormSchema.safeParse({
     ...raw,
-    durationWeeks: PROJECT_DURATION_WEEKS,
+    // Only a missing value gets the default; null, text and the like are errors.
+    durationWeeks:
+      (raw as { durationWeeks?: unknown }).durationWeeks === undefined
+        ? DEFAULT_DURATION_WEEKS
+        : (raw as { durationWeeks?: unknown }).durationWeeks,
   });
   if (!parsed.success) {
     const fields: Record<string, string> = {};

@@ -37,19 +37,32 @@ beforeEach(() => {
 });
 
 describe("POST /api/projects", () => {
-  it("creates a project and forces duration to 12", async () => {
-    repo.createProject.mockResolvedValue(project);
-    const res = await post({
-      title: "Smart Attendance",
-      description: "A system that marks attendance using faces.",
-      repoUrl: "https://github.com/octocat/hello-world",
-      durationWeeks: 99,
-    });
+  const base = {
+    title: "Smart Attendance",
+    description: "A system that marks attendance using faces.",
+    repoUrl: "https://github.com/octocat/hello-world",
+  };
+
+  it("creates a project with the chosen duration", async () => {
+    repo.createProject.mockResolvedValue({ ...project, durationWeeks: 4 });
+    const res = await post({ ...base, durationWeeks: 4 });
     expect(res.status).toBe(201);
-    expect(repo.createProject).toHaveBeenCalledWith(
-      expect.objectContaining({ durationWeeks: 12 }),
-    );
-    expect((await res.json()).project.id).toBe(project.id);
+    expect(repo.createProject).toHaveBeenCalledWith(expect.objectContaining({ durationWeeks: 4 }));
+    expect((await res.json()).project.durationWeeks).toBe(4);
+  });
+
+  it("uses 12 weeks when no duration is given", async () => {
+    repo.createProject.mockResolvedValue(project);
+    expect((await post(base)).status).toBe(201);
+    expect(repo.createProject).toHaveBeenCalledWith(expect.objectContaining({ durationWeeks: 12 }));
+  });
+
+  it.each([0, 17, 99, -1, 1.5, "8", null, true])("rejects a duration of %j and creates nothing", async (durationWeeks) => {
+    const res = await post({ ...base, durationWeeks });
+    expect(res.status).toBe(400);
+    const { error } = await res.json();
+    expect(Object.keys(error.fields)).toEqual(["durationWeeks"]);
+    expect(repo.createProject).not.toHaveBeenCalled();
   });
 
   it("rejects invalid input on the server with field errors", async () => {

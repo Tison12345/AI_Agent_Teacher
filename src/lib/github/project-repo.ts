@@ -4,7 +4,7 @@ import { getProject } from "@/lib/projects/repository";
 import { parseGitHubRepoUrl } from "@/lib/validation/project";
 import { z } from "zod";
 
-export type ProjectRepo = { owner: string; repo: string };
+export type ProjectRepo = { owner: string; repo: string; durationWeeks: number };
 
 /**
  * Shared by the repo routes: checks the id, loads the project and parses its
@@ -22,5 +22,5 @@ export async function loadProjectRepo(
   if (!parsed) {
     return errorResponse(400, "github_invalid_repository", "That is not a valid GitHub repository.");
   }
-  return parsed;
+  return { ...parsed, durationWeeks: project.durationWeeks };
 }

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GeminiError } from "@/lib/gemini/errors";
 
 const state = vi.hoisted(() => ({
+  duration: 12,
   checkpoints: undefined as unknown as { store: unknown; checkpoints: unknown[] },
   evaluations: undefined as unknown as { store: unknown; rows: unknown[] },
   plan: null as unknown,
@@ -11,7 +12,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/projects/repository", () => ({
-  getProject: vi.fn(async () => ({ id: "x", repoUrl: "https://github.com/octocat/hello-world" })),
+  getProject: vi.fn(async () => ({ id: "x", repoUrl: "https://github.com/octocat/hello-world", durationWeeks: state.duration })),
 }));
 vi.mock("@/lib/checkpoints/repository", async () => {
   const { memoryStore } = await import("@/test/memory-checkpoint-store");
@@ -55,6 +56,7 @@ const diff = {
 
 beforeEach(async () => {
   vi.spyOn(console, "error").mockImplementation(() => {});
+  state.duration = 12;
   (state.checkpoints.checkpoints as unknown[]).length = 0;
   (state.evaluations.rows as unknown[]).length = 0;
   state.geminiConfigured = true;
@@ -91,6 +93,16 @@ describe("POST /api/projects/[id]/weeks/[week]/evaluate", () => {
   it.each(["0", "13", "abc", "1.5", "-1", ""])("rejects week %j with 400", async (week) => {
     expect((await POST(req, ctx(week))).status).toBe(400);
     expect(state.gemini.generateContent).not.toHaveBeenCalled();
+  });
+
+  it("the project's own duration limits the weeks, before any GitHub or AI work", async () => {
+    state.duration = 3;
+    const res = await POST(req, ctx("4"));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toMatch(/lasts 3 weeks/);
+    expect(state.gemini.generateContent).not.toHaveBeenCalled();
+    state.duration = 16;
+    expect((await POST(req, ctx("13"))).status).toBe(409); // allowed week, just not recorded
   });
 
   it("409 checkpoint_required for a week that was not recorded", async () => {

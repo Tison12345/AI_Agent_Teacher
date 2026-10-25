@@ -3,7 +3,7 @@ import { errorResponse, handleUnexpected } from "@/lib/api/errors";
 import { checkpointStore } from "@/lib/checkpoints/repository";
 import { evaluationStore } from "@/lib/evaluation/repository";
 import { getProject } from "@/lib/projects/repository";
-import { PROJECT_DURATION_WEEKS } from "@/lib/validation/project";
+import { MAX_DURATION_WEEKS } from "@/lib/validation/project";
 
 /**
  * Full AI evaluation for a week, for teacher review and for inspecting this phase.
@@ -19,11 +19,15 @@ export async function GET(
   if (!z.uuid().safeParse(id).success) {
     return errorResponse(400, "invalid_id", "Project id must be a valid UUID.");
   }
-  if (!(weekNumber >= 1 && weekNumber <= PROJECT_DURATION_WEEKS)) {
-    return errorResponse(400, "invalid_week", `Week must be a whole number from 1 to ${PROJECT_DURATION_WEEKS}.`);
+  if (!(weekNumber >= 1 && weekNumber <= MAX_DURATION_WEEKS)) {
+    return errorResponse(400, "invalid_week", `Week must be a whole number from 1 to ${MAX_DURATION_WEEKS}.`);
   }
   try {
-    if (!(await getProject(id))) return errorResponse(404, "not_found", "Project not found.");
+    const project = await getProject(id);
+    if (!project) return errorResponse(404, "not_found", "Project not found.");
+    if (weekNumber > project.durationWeeks) {
+      return errorResponse(400, "invalid_week", `This project lasts ${project.durationWeeks} ${project.durationWeeks === 1 ? "week" : "weeks"}, so the week must be from 1 to ${project.durationWeeks}.`);
+    }
     const checkpoint = await checkpointStore.getCheckpoint(id, weekNumber);
     const stored = checkpoint ? await evaluationStore.getByCheckpoint(checkpoint.id) : null;
     if (!stored) return errorResponse(404, "not_found", `Week ${weekNumber} has no evaluation yet.`);

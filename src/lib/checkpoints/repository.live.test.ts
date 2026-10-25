@@ -66,7 +66,17 @@ describe.skipIf(!configured)("checkpoint store (live Supabase)", () => {
       checkpointStore.insertCheckpoint({ ...base, weekNumber: 5, commitSha: "not-a-sha", baseCommitSha: sha("1") }),
     ).rejects.toMatchObject({ code: "db_error" });
     await expect(
-      checkpointStore.insertCheckpoint({ ...base, weekNumber: 13, commitSha: sha("1"), baseCommitSha: sha("1") }),
+      checkpointStore.insertCheckpoint({ ...base, weekNumber: 17, commitSha: sha("1"), baseCommitSha: sha("1") }),
     ).rejects.toMatchObject({ code: "db_error" });
+    await expect(
+      checkpointStore.insertCheckpoint({ ...base, weekNumber: 0, commitSha: sha("1"), baseCommitSha: sha("1") }),
+    ).rejects.toMatchObject({ code: "db_error" });
+  });
+
+  // Needs migration 0006_variable_duration.sql: weeks up to 16 are allowed now.
+  it("accepts a checkpoint for week 16 (longer projects)", async () => {
+    const base = { projectId, branch: "main", filesChanged: 1, additions: 1, deletions: 0 };
+    const stored = await checkpointStore.insertCheckpoint({ ...base, weekNumber: 16, commitSha: sha("c"), baseCommitSha: sha("b") });
+    expect(stored.weekNumber).toBe(16);
   });
 });

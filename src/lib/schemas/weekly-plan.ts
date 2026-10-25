@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PROJECT_DURATION_WEEKS } from "@/lib/validation/project";
+import { MAX_DURATION_WEEKS, MIN_DURATION_WEEKS } from "@/lib/validation/project";
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 
@@ -12,7 +12,7 @@ export const EvaluationCriterionSchema = z.object({
 });
 
 export const WeeklyPlanItemSchema = z.object({
-  weekNumber: z.number().int().min(1).max(PROJECT_DURATION_WEEKS),
+  weekNumber: z.number().int().min(1).max(MAX_DURATION_WEEKS),
   title: text(150),
   objectives: z.array(text(400)).min(1).max(8),
   tasks: z.array(text(400)).min(1).max(12),
@@ -31,15 +31,17 @@ export const WeeklyPlanItemSchema = z.object({
 
 const inOrder = (items: { weekNumber: number }[]) =>
   items.every((item, index) => item.weekNumber === index + 1);
-const IN_ORDER_MESSAGE = "Weeks must be numbered 1 to 12 in order.";
+const IN_ORDER_MESSAGE = "Weeks must be numbered 1, 2, 3 and so on, in order.";
 
 /**
- * A full stored plan: exactly 12 items, one per week 1..12. Deliberately
- * lenient about list sizes so plans saved earlier keep loading.
+ * A full stored plan: one item per week, numbered 1..n in order. The length must
+ * match the project's duration, which is checked where the plan is generated.
+ * Deliberately lenient about list sizes so plans saved earlier keep loading.
  */
 export const WeeklyPlanSchema = z
   .array(WeeklyPlanItemSchema)
-  .length(PROJECT_DURATION_WEEKS)
+  .min(MIN_DURATION_WEEKS)
+  .max(MAX_DURATION_WEEKS)
   .refine(inOrder, IN_ORDER_MESSAGE);
 
 /**
@@ -67,10 +69,9 @@ export const GeneratedWeekSchema = WeeklyPlanItemSchema.extend({
     ),
 });
 
-export const GeneratedPlanSchema = z
-  .array(GeneratedWeekSchema)
-  .length(PROJECT_DURATION_WEEKS)
-  .refine(inOrder, IN_ORDER_MESSAGE);
+/** The plan Gemini must return for a project that lasts `weeks` weeks. */
+export const generatedPlanSchema = (weeks: number) =>
+  z.array(GeneratedWeekSchema).length(weeks).refine(inOrder, IN_ORDER_MESSAGE);
 
 /** A plan as persisted: one per project, with the model that produced it. */
 export const StoredPlanSchema = z.object({

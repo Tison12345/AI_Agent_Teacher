@@ -12,11 +12,16 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* The interface is designed for a light background only: its cards are always white,
+   so following the OS dark mode would give light text on white. */
+:root {
+  color-scheme: light;
+}
+
+/* One clear keyboard focus indicator for every control. */
+:focus-visible {
+  outline: 2px solid #4338ca;
+  outline-offset: 2px;
 }
 
 body {

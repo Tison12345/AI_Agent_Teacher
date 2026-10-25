@@ -1,6 +1,17 @@
 import { z } from "zod";
 
-export const PROJECT_DURATION_WEEKS = 12;
+/** A project lasts between 1 and 16 weeks; the teacher or student chooses when it is created. */
+export const MIN_DURATION_WEEKS = 1;
+export const MAX_DURATION_WEEKS = 16;
+export const DEFAULT_DURATION_WEEKS = 12;
+
+export const DURATION_MESSAGE = `Duration must be a whole number of weeks from ${MIN_DURATION_WEEKS} to ${MAX_DURATION_WEEKS}.`;
+
+export const durationWeeksSchema = z
+  .number({ error: "Enter the number of weeks." })
+  .int(DURATION_MESSAGE)
+  .min(MIN_DURATION_WEEKS, DURATION_MESSAGE)
+  .max(MAX_DURATION_WEEKS, DURATION_MESSAGE);
 
 // Accepts https://github.com/<owner>/<repo>, optionally with ".git" or a trailing slash.
 const GITHUB_REPO_URL =
@@ -37,11 +48,11 @@ export const projectFormSchema = z.object({
       (value) => parseGitHubRepoUrl(value) !== null,
       "Enter a valid GitHub repository URL, e.g. https://github.com/owner/repo.",
     ),
-  durationWeeks: z.literal(PROJECT_DURATION_WEEKS),
+  durationWeeks: durationWeeksSchema,
 });
 
 export type ProjectFormValues = z.output<typeof projectFormSchema>;
-export type ProjectFormField = "title" | "description" | "repoUrl";
+export type ProjectFormField = "title" | "description" | "repoUrl" | "durationWeeks";
 export type ProjectFormErrors = Partial<Record<ProjectFormField, string>>;
 
 export type ProjectValidationResult =
@@ -52,14 +63,18 @@ const FIELDS: readonly ProjectFormField[] = [
   "title",
   "description",
   "repoUrl",
+  "durationWeeks",
 ];
 
 export function validateProjectForm(
   input: Record<ProjectFormField, string>,
 ): ProjectValidationResult {
+  // The form field is text. Only a plain number is read as one: a blank entry is "missing"
+  // (not 0), and forms such as "1e1" or "4 weeks" are not numbers.
+  const weeks = input.durationWeeks.trim();
   const result = projectFormSchema.safeParse({
     ...input,
-    durationWeeks: PROJECT_DURATION_WEEKS,
+    durationWeeks: weeks === "" ? undefined : /^-?\d+(\.\d+)?$/.test(weeks) ? Number(weeks) : Number.NaN,
   });
   if (result.success) return { success: true, data: result.data };
 

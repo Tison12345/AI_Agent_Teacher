@@ -15,6 +15,7 @@ const item = (over: Partial<QueueItem> = {}): QueueItem => ({
   weekNumber: 2,
   status: "pending_review",
   suggestedScore: 71.5,
+  officialScore: null,
   confidence: "medium",
   createdAt: "2026-10-26T10:00:00+00:00",
   ...over,
@@ -65,5 +66,20 @@ describe("FacultyQueue", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Storage is not configured");
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("Library app · Week 2")).toBeInTheDocument();
+  });
+});
+
+describe("FacultyQueue: official versus AI score", () => {
+  it("shows the official score next to the AI's for decided rows, so an edit is not mistaken for the AI's number", async () => {
+    api.fetchQueue.mockResolvedValue([
+      item({ status: "edited", suggestedScore: 15, officialScore: 40 }),
+      item({ evaluationId: "00000000-0000-4000-9000-000000000002", status: "rejected", officialScore: null, weekNumber: 3 }),
+      item({ evaluationId: "00000000-0000-4000-9000-000000000003", status: "pending_review", weekNumber: 4 }),
+    ]);
+    render(<FacultyQueue />);
+    expect(await screen.findByText("Official score: 40/100")).toBeInTheDocument();
+    expect(screen.getByText(/AI suggestion \(not official\): 15\/100/)).toBeInTheDocument();
+    expect(screen.getByText("No official score")).toBeInTheDocument();
+    expect(screen.getAllByText(/Official score|No official score/)).toHaveLength(2); // none for the pending row
   });
 });

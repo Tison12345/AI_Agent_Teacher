@@ -11,17 +11,16 @@ import {
 } from "@/lib/api/client";
 import type { Checkpoint, Progress } from "@/lib/schemas/checkpoint";
 import type { StudentResult } from "@/lib/schemas/review";
-import { PROJECT_DURATION_WEEKS } from "@/lib/validation/project";
 
 type Load =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; progress: Progress };
 
-const WEEKS = Array.from({ length: PROJECT_DURATION_WEEKS }, (_, i) => i + 1);
 const short = (sha: string) => sha.slice(0, 7);
 
-export function ProgressSection({ projectId }: { projectId: string }) {
+export function ProgressSection({ projectId, durationWeeks }: { projectId: string; durationWeeks: number }) {
+  const weeks = Array.from({ length: durationWeeks }, (_, i) => i + 1);
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState<"baseline" | number | null>(null);
@@ -217,7 +216,7 @@ export function ProgressSection({ projectId }: { projectId: string }) {
             onRecord={handleBaseline}
           />
           <ol className="space-y-2">
-            {WEEKS.map((week) => {
+            {weeks.map((week) => {
               const checkpoint = load.progress.checkpoints.find((c) => c.weekNumber === week);
               const evaluation = load.progress.evaluations.find((e) => e.weekNumber === week);
               const previousDone =

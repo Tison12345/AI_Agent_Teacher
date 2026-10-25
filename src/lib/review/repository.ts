@@ -80,6 +80,16 @@ export const reviewStore: ReviewStore = {
     if (projects.error) fail(projects.error);
     const titles = new Map((projects.data ?? []).map((p) => [String(p.id), String(p.title)]));
 
+    const decided = rows.filter((r) => r.status !== "pending_review").map((r) => r.id);
+    const official = new Map<string, number | null>();
+    if (decided.length > 0) {
+      const decisions = await db.from("teacher_decisions").select("evaluation_id, approved_score").in("evaluation_id", decided);
+      if (decisions.error) fail(decisions.error);
+      for (const d of decisions.data ?? []) {
+        official.set(String(d.evaluation_id), d.approved_score === null ? null : Number(d.approved_score));
+      }
+    }
+
     return rows.map((r) => ({
       evaluationId: r.id,
       projectId: r.project_id,
@@ -87,6 +97,7 @@ export const reviewStore: ReviewStore = {
       weekNumber: r.week_number,
       status: r.status,
       suggestedScore: r.suggested_score,
+      officialScore: official.get(r.id) ?? null,
       confidence: r.confidence.level,
       createdAt: r.created_at,
     }));

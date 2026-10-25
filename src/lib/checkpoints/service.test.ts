@@ -17,7 +17,7 @@ const S0 = sha("0"); // initial commit = baseline
 const S1 = sha("1");
 const S2 = sha("2");
 const S3 = sha("3");
-const target = { projectId: PROJECT, owner: "octocat", repo: "hello-world" };
+const target = { projectId: PROJECT, owner: "octocat", repo: "hello-world", durationWeeks: 12 };
 
 type Compare = Awaited<ReturnType<GitHubReader["compareCommits"]>>;
 const changed = (over: Partial<Compare> = {}): Compare => ({
@@ -140,6 +140,17 @@ describe("completeWeek: baseline and ordering", () => {
   it.each([0, 13, -1, 1.5, NaN, Infinity])("rejects week %s", async (weekNumber) => {
     const github = fakeGitHub({ head: S1 });
     expect(await code(completeWeek({ ...target, weekNumber }, { store: db.store, github }))).toBe("invalid_week");
+  });
+
+  it("the allowed weeks follow the project's own duration, not a fixed 12", async () => {
+    const github = fakeGitHub({ head: S1 });
+    const short = { ...target, durationWeeks: 3 };
+    expect(await code(completeWeek({ ...short, weekNumber: 4 }, { store: db.store, github }))).toBe("invalid_week");
+    expect(await code(completeWeek({ ...short, weekNumber: 12 }, { store: db.store, github }))).toBe("invalid_week");
+    // Week 13 is valid for a 16-week project (it still needs its earlier weeks first).
+    const long = { ...target, durationWeeks: 16 };
+    expect(await code(completeWeek({ ...long, weekNumber: 13 }, { store: db.store, github }))).toBe("previous_week_required");
+    expect(db.checkpoints).toHaveLength(0);
   });
 });
 

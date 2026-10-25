@@ -44,7 +44,7 @@ const row = (week: number) => screen.getByText(`Week ${week}`).closest("li") as 
 describe("ProgressSection: starting point and recording", () => {
   it("shows loading, then the starting-point prompt with every week locked", async () => {
     api.fetchProgress.mockResolvedValue(progress());
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     expect(screen.getByText("Loading progress…")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Record starting point" })).toBeInTheDocument();
     expect(within(row(1)).getByText("Record your starting point first")).toBeInTheDocument();
@@ -55,7 +55,7 @@ describe("ProgressSection: starting point and recording", () => {
   it("shows a load error with retry", async () => {
     api.fetchProgress.mockRejectedValueOnce(new Error("Storage is not configured.")).mockResolvedValueOnce(progress());
     const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Storage is not configured.");
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("button", { name: "Record starting point" })).toBeInTheDocument();
@@ -65,7 +65,7 @@ describe("ProgressSection: starting point and recording", () => {
     api.fetchProgress.mockResolvedValue(progress());
     api.recordBaseline.mockResolvedValue({ ok: true, value: baseline });
     const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await user.click(await screen.findByRole("button", { name: "Record starting point" }));
     const startingPoint = (await screen.findByText(/Starting point:/)).closest("p");
     expect(startingPoint).toHaveTextContent("0000000");
@@ -78,7 +78,7 @@ describe("ProgressSection: starting point and recording", () => {
     api.fetchProgress.mockResolvedValue(progress());
     api.recordBaseline.mockResolvedValue({ ok: false, message: "The repository has no commits yet." });
     const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await user.click(await screen.findByRole("button", { name: "Record starting point" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("The repository has no commits yet.");
   });
@@ -86,7 +86,7 @@ describe("ProgressSection: starting point and recording", () => {
   it("asks for confirmation before recording, and Cancel records nothing", async () => {
     api.fetchProgress.mockResolvedValue(progress({ baseline }));
     const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await user.click(await screen.findByRole("button", { name: "Complete Week 1" }));
     const confirm = screen.getByRole("group", { name: "Confirm Week 1" });
     expect(confirm).toHaveTextContent(/cannot be undone/);
@@ -101,7 +101,7 @@ describe("ProgressSection: starting point and recording", () => {
     api.fetchProgress.mockResolvedValue(
       progress({ baseline, checkpoints: [checkpoint(1), checkpoint(2)], evaluations: [submitted(1), submitted(2)] }),
     );
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     expect(await screen.findByRole("button", { name: "Complete Week 3" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /Complete Week/ })).toHaveLength(1);
     expect(screen.getAllByText("Recorded · submitted for teacher review")).toHaveLength(2);
@@ -115,7 +115,7 @@ describe("ProgressSection: starting point and recording", () => {
       message: "No new commits since your starting point. Push your work to GitHub, then try again.",
     });
     const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await user.click(await screen.findByRole("button", { name: "Complete Week 1" }));
     await user.click(screen.getByRole("button", { name: "Yes, record Week 1" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("No new commits");
@@ -127,7 +127,7 @@ describe("ProgressSection: starting point and recording", () => {
     api.fetchProgress.mockResolvedValue(progress({ baseline }));
     api.completeWeek.mockRejectedValue(new Error("network"));
     const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await user.click(await screen.findByRole("button", { name: "Complete Week 1" }));
     await user.click(screen.getByRole("button", { name: "Yes, record Week 1" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/Could not reach the server/);
@@ -145,7 +145,7 @@ describe("ProgressSection: evaluation after recording", () => {
     api.fetchProgress.mockResolvedValue(progress({ baseline }));
     api.completeWeek.mockResolvedValue({ ok: true, value: checkpoint(1) });
     const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await recordWeek1(user);
     expect(api.requestEvaluation).toHaveBeenCalledWith(PROJECT, 1);
     expect(await within(row(1)).findByText("Recorded · submitted for teacher review")).toBeInTheDocument();
@@ -160,7 +160,7 @@ describe("ProgressSection: evaluation after recording", () => {
     let resolve: (v: unknown) => void = () => {};
     api.requestEvaluation.mockReturnValue(new Promise((r) => (resolve = r)));
     const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await recordWeek1(user);
     expect(await within(row(1)).findByRole("status")).toHaveTextContent(/Evaluating your code changes/);
     expect(screen.getByRole("button", { name: "Complete Week 2" })).toBeDisabled();
@@ -176,7 +176,7 @@ describe("ProgressSection: evaluation after recording", () => {
       .mockResolvedValueOnce({ ok: false, message: "Gemini is rate limiting requests. Please wait a minute and try again." })
       .mockResolvedValueOnce({ ok: true, status: "pending_review" });
     const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await recordWeek1(user);
     expect(await screen.findByRole("alert")).toHaveTextContent("rate limiting");
     expect(within(row(1)).getByText("Recorded · not yet evaluated")).toBeInTheDocument();
@@ -192,7 +192,7 @@ describe("ProgressSection: evaluation after recording", () => {
     api.completeWeek.mockResolvedValue({ ok: true, value: checkpoint(1) });
     api.requestEvaluation.mockRejectedValue(new Error("network"));
     const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await recordWeek1(user);
     expect(await screen.findByRole("alert")).toHaveTextContent(/Could not reach the server for the evaluation/);
     expect(within(row(1)).getByText("Recorded · not yet evaluated")).toBeInTheDocument();
@@ -202,7 +202,7 @@ describe("ProgressSection: evaluation after recording", () => {
     api.fetchProgress.mockResolvedValue(progress({ baseline, checkpoints: [checkpoint(1)] }));
     api.requestEvaluation.mockResolvedValue({ ok: false, message: "Week 1 already has an evaluation.", status: "pending_review" });
     const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await user.click(await within(await screen.findByText("Week 1").then((el) => el.closest("li") as HTMLElement)).findByRole("button", { name: "Generate evaluation" }));
     expect(await within(row(1)).findByText("Recorded · submitted for teacher review")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -216,7 +216,7 @@ describe("ProgressSection: evaluation after recording", () => {
       existing: checkpoint(1),
     });
     const user = userEvent.setup();
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await recordWeek1(user);
     expect(await within(row(1)).findByText("Recorded · not yet evaluated")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("already recorded");
@@ -227,7 +227,7 @@ describe("ProgressSection: evaluation after recording", () => {
     api.fetchProgress.mockResolvedValue(
       progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [submitted(1)] }),
     );
-    const { container } = render(<ProgressSection projectId={PROJECT} />);
+    const { container } = render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await screen.findByText("Recorded · submitted for teacher review");
     expect(container.textContent).not.toMatch(/\d+\s*\/\s*100|\bscore\b|suggested/i);
     expect(container.textContent).toMatch(/you will not see it/i);
@@ -238,7 +238,7 @@ describe("ProgressSection: evaluation after recording", () => {
     api.fetchProgress.mockResolvedValue(
       progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [{ weekNumber: 1, status: "approved" }] }),
     );
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     expect(await screen.findByText("Recorded · reviewed by your teacher")).toBeInTheDocument();
   });
 });
@@ -259,7 +259,7 @@ describe("ProgressSection: the teacher's official result", () => {
       progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [decided(1, "approved")] }),
     );
     api.fetchResults.mockResolvedValue([result({})]);
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await screen.findByText("Recorded · reviewed by your teacher");
     expect(await within(row(1)).findByText(/Official result: 82\.5\/100/)).toBeInTheDocument();
     expect(within(row(1)).getByText("Teacher feedback")).toBeInTheDocument();
@@ -272,7 +272,7 @@ describe("ProgressSection: the teacher's official result", () => {
       progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [decided(1, "rejected")] }),
     );
     api.fetchResults.mockResolvedValue([result({ outcome: "rejected", officialScore: null, feedback: null })]);
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await screen.findByText("Recorded · reviewed by your teacher");
     expect(await within(row(1)).findByText(/did not give an official mark/)).toBeInTheDocument();
     expect(row(1).textContent).not.toMatch(/\d+\s*\/\s*100/);
@@ -282,7 +282,7 @@ describe("ProgressSection: the teacher's official result", () => {
     api.fetchProgress.mockResolvedValue(
       progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [submitted(1)] }),
     );
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await screen.findByText("Recorded · submitted for teacher review");
     expect(api.fetchResults).not.toHaveBeenCalled();
     expect(within(row(1)).queryByText(/Official result/)).not.toBeInTheDocument();
@@ -293,8 +293,28 @@ describe("ProgressSection: the teacher's official result", () => {
       progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [decided(1, "edited")] }),
     );
     api.fetchResults.mockRejectedValue(new Error("network"));
-    render(<ProgressSection projectId={PROJECT} />);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await screen.findByText("Recorded · reviewed by your teacher");
     expect(await within(row(1)).findByRole("alert")).toHaveTextContent(/result could not be loaded/);
+  });
+});
+
+describe("ProgressSection: the project decides how many weeks are listed", () => {
+  it.each([1, 4, 16])("lists exactly %i weeks for a project of that length", async (durationWeeks) => {
+    api.fetchProgress.mockResolvedValue(progress({ baseline }));
+    render(<ProgressSection projectId={PROJECT} durationWeeks={durationWeeks} />);
+    await screen.findByRole("button", { name: "Complete Week 1" });
+    expect(screen.getAllByRole("listitem")).toHaveLength(durationWeeks);
+    expect(screen.getByText(`Week ${durationWeeks}`)).toBeInTheDocument();
+    expect(screen.queryByText(`Week ${durationWeeks + 1}`)).not.toBeInTheDocument();
+  });
+
+  it("a short project has no locked weeks after its last one", async () => {
+    api.fetchProgress.mockResolvedValue(
+      progress({ baseline, checkpoints: [checkpoint(1), checkpoint(2)], evaluations: [submitted(1), submitted(2)] }),
+    );
+    render(<ProgressSection projectId={PROJECT} durationWeeks={3} />);
+    expect(await screen.findByRole("button", { name: "Complete Week 3" })).toBeInTheDocument();
+    expect(screen.queryByText("Week 4")).not.toBeInTheDocument();
   });
 });

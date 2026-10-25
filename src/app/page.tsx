@@ -4,7 +4,7 @@ const cards = [
   {
     href: "/student",
     title: "Student Dashboard",
-    body: "Create a project and, in later phases, track your 12-week plan and results.",
+    body: "Create a project and, in later phases, track your weekly plan and results.",
   },
   {
     href: "/faculty",

@@ -29,6 +29,7 @@ export function memoryReviewStore(
           weekNumber: e.weekNumber,
           status: e.status,
           suggestedScore: e.suggestedScore,
+          officialScore: decisions.find((d) => d.evaluationId === e.id)?.approvedScore ?? null,
           confidence: e.confidence.level,
           createdAt: e.createdAt,
         }));

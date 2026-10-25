@@ -2,13 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GitHubError } from "@/lib/github/errors";
 
 const state = vi.hoisted(() => ({
+  duration: 12,
   head: "" as string | Error,
   compare: undefined as unknown,
   db: undefined as unknown as { store: unknown; baselines: Map<string, unknown>; checkpoints: unknown[] },
 }));
 
 vi.mock("@/lib/projects/repository", () => ({
-  getProject: vi.fn(async () => ({ id: "x", repoUrl: "https://github.com/octocat/hello-world" })),
+  getProject: vi.fn(async () => ({ id: "x", repoUrl: "https://github.com/octocat/hello-world", durationWeeks: state.duration })),
 }));
 vi.mock("@/lib/checkpoints/repository", async () => {
   const { memoryStore } = await import("@/test/memory-checkpoint-store");
@@ -41,6 +42,7 @@ const project = (projectId = id) => ({ params: Promise.resolve({ id: projectId }
 
 beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
+  state.duration = 12;
   state.db.baselines.clear();
   state.db.checkpoints.length = 0;
   state.head = sha("0");
@@ -95,6 +97,28 @@ describe("POST /api/projects/[id]/weeks/[week]/complete", () => {
     await startProject();
     expect((await POST(req, week(value))).status).toBe(400);
     expect(state.db.checkpoints).toHaveLength(0);
+  });
+
+  it("the project's own duration limits the weeks: a 3-week project refuses week 4 and says why", async () => {
+    state.duration = 3;
+    await startProject();
+    state.head = sha("1");
+    const res = await POST(req, week("4"));
+    expect(res.status).toBe(400);
+    const { error } = await res.json();
+    expect(error.code).toBe("invalid_week");
+    expect(error.message).toMatch(/lasts 3 weeks.*1 to 3/);
+    expect(state.db.checkpoints).toHaveLength(0);
+    expect((await POST(req, week("1"))).status).toBe(201); // week 1 of a 3-week project is fine
+  });
+
+  it("a longer project allows later weeks (week 13 of 16 is only blocked by the earlier weeks)", async () => {
+    state.duration = 16;
+    await startProject();
+    state.head = sha("1");
+    const res = await POST(req, week("13"));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("previous_week_required");
   });
 
   it("409 baseline_required before a starting point exists", async () => {

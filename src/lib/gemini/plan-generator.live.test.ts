@@ -11,6 +11,7 @@ describe.skipIf(!process.env.GEMINI_API_KEY)("generateWeeklyPlan (live Gemini)",
         title: "Smart Attendance System",
         description:
           "A web app that marks class attendance using face recognition from a webcam, with a teacher dashboard for reports.",
+        durationWeeks: 12,
       },
       { client: getGeminiClient(), model: getGeminiModel() },
     );

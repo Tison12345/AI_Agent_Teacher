@@ -179,6 +179,7 @@ export async function createProject(
       title: values.title,
       description: values.description,
       repoUrl: values.repoUrl,
+      durationWeeks: values.durationWeeks,
     }),
   });
   if (res.ok) {

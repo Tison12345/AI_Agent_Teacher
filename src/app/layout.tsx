@@ -18,8 +18,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geistSans.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-slate-50 text-slate-900">
+        <a
+          href="#main"
+          className="sr-only rounded bg-white px-3 py-2 font-medium text-indigo-700 focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-10"
+        >
+          Skip to main content
+        </a>
         <SiteNav />
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
+        <main id="main" className="mx-auto w-full max-w-5xl flex-1 break-words px-4 py-8">
           {children}
         </main>
       </body>

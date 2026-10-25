@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PROJECT_DURATION_WEEKS } from "@/lib/validation/project";
+import { MAX_DURATION_WEEKS } from "@/lib/validation/project";
 
 export const CommitShaSchema = z
   .string()
@@ -26,7 +26,7 @@ export const BaselineSchema = z.object({
 export const CheckpointSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
-  weekNumber: z.number().int().min(1).max(PROJECT_DURATION_WEEKS),
+  weekNumber: z.number().int().min(1).max(MAX_DURATION_WEEKS),
   /** Latest pushed commit on the default branch when the week was completed. */
   commitSha: CommitShaSchema,
   /** Week 1: the baseline commit. Later weeks: the previous week's checkpoint commit. */
@@ -50,7 +50,7 @@ export const ProgressSchema = z.object({
   evaluations: z
     .array(
       z.object({
-        weekNumber: z.number().int().min(1).max(PROJECT_DURATION_WEEKS),
+        weekNumber: z.number().int().min(1).max(MAX_DURATION_WEEKS),
         status: z.enum(["pending_review", "approved", "edited", "rejected"]),
       }),
     )

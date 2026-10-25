@@ -7,7 +7,7 @@ import { getGeminiClient, getGeminiModel } from "@/lib/gemini/client";
 import { getGitHubClient } from "@/lib/github/client";
 import { loadProjectRepo } from "@/lib/github/project-repo";
 import { getPlan } from "@/lib/plans/repository";
-import { PROJECT_DURATION_WEEKS } from "@/lib/validation/project";
+import { MAX_DURATION_WEEKS } from "@/lib/validation/project";
 
 // Fetching the diff and asking Gemini can take a while.
 export const maxDuration = 60;
@@ -23,12 +23,15 @@ export async function POST(
 ) {
   const { id, week } = await ctx.params;
   const weekNumber = /^\d{1,2}$/.test(week) ? Number(week) : NaN;
-  if (!(weekNumber >= 1 && weekNumber <= PROJECT_DURATION_WEEKS)) {
-    return errorResponse(400, "invalid_week", `Week must be a whole number from 1 to ${PROJECT_DURATION_WEEKS}.`);
+  if (!(weekNumber >= 1 && weekNumber <= MAX_DURATION_WEEKS)) {
+    return errorResponse(400, "invalid_week", `Week must be a whole number from 1 to ${MAX_DURATION_WEEKS}.`);
   }
   try {
     const target = await loadProjectRepo(id);
     if (target instanceof Response) return target;
+    if (weekNumber > target.durationWeeks) {
+      return errorResponse(400, "invalid_week", `This project lasts ${target.durationWeeks} ${target.durationWeeks === 1 ? "week" : "weeks"}, so the week must be from 1 to ${target.durationWeeks}.`);
+    }
 
     // Fail fast, before any GitHub or Gemini work, if Gemini is not configured.
     const client = getGeminiClient();

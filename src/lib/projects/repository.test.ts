@@ -80,7 +80,9 @@ describe("projects repository", () => {
   });
 
   it("throws invalid_data for rows that fail validation", async () => {
-    result = { data: { ...row, duration_weeks: 8 }, error: null };
+    result = { data: { ...row, duration_weeks: 99 }, error: null };
+    await expect(getProject(row.id)).rejects.toMatchObject({ code: "invalid_data" });
+    result = { data: { ...row, duration_weeks: 0 }, error: null };
     await expect(getProject(row.id)).rejects.toMatchObject({ code: "invalid_data" });
     result = { data: { nonsense: true }, error: null };
     await expect(getProject(row.id)).rejects.toMatchObject({ code: "invalid_data" });

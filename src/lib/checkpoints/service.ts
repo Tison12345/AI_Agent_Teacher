@@ -1,4 +1,3 @@
-import { PROJECT_DURATION_WEEKS } from "@/lib/validation/project";
 import type { Baseline, Checkpoint } from "@/lib/schemas/checkpoint";
 
 /*
@@ -30,7 +29,7 @@ const baseLabel = (week: number) => (week === 1 ? "your starting point" : `Week 
 function message(code: CheckpointErrorCode, week?: number): string {
   switch (code) {
     case "invalid_week":
-      return `Week must be a whole number from 1 to ${PROJECT_DURATION_WEEKS}.`;
+      return "That week is outside this project's schedule.";
     case "baseline_required":
       return "Record your starting point before completing Week 1.";
     case "baseline_exists":
@@ -98,7 +97,7 @@ export type GitHubReader = {
 };
 
 export type Deps = { store: CheckpointStore; github: GitHubReader };
-type Target = { projectId: string; owner: string; repo: string };
+type Target = { projectId: string; owner: string; repo: string; durationWeeks: number };
 
 async function currentHead(github: GitHubReader, { owner, repo }: Target) {
   const repository = await github.getRepository(owner, repo);
@@ -133,7 +132,7 @@ export async function completeWeek(
   { store, github }: Deps,
 ): Promise<Checkpoint> {
   const { projectId, owner, repo, weekNumber } = target;
-  if (!Number.isInteger(weekNumber) || weekNumber < 1 || weekNumber > PROJECT_DURATION_WEEKS) {
+  if (!Number.isInteger(weekNumber) || weekNumber < 1 || weekNumber > target.durationWeeks) {
     throw new CheckpointError("invalid_week");
   }
 

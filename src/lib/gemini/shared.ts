@@ -46,7 +46,10 @@ export function toGeminiError(error: unknown): GeminiError {
   if (error instanceof GeminiError) return error;
   if (error instanceof ApiError) {
     console.error("[gemini] API error, status", error.status);
-    if (error.status === 429) return new GeminiError("rate_limited");
+    if (error.status === 429) {
+      // Google names the exhausted quota in the message; a per-day quota will not clear in a minute.
+      return new GeminiError(/per.?day/i.test(error.message) ? "quota_exhausted" : "rate_limited");
+    }
     if (error.status === 408 || error.status === 504) return new GeminiError("timeout");
     if (error.status >= 500) return new GeminiError("unavailable");
     return new GeminiError("rejected");

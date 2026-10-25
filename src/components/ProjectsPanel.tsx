@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ProjectForm, type ProjectSubmitResult } from "@/components/ProjectForm";
+import { ProjectResults } from "@/components/ProjectResults";
 import { createProject, fetchProjects } from "@/lib/api/client";
 import type { Project } from "@/lib/schemas/project";
 import type { ProjectFormValues } from "@/lib/validation/project";
@@ -111,6 +112,7 @@ export function ProjectsPanel() {
                     {project.durationWeeks} weeks ·{" "}
                     {new Date(project.createdAt).toLocaleDateString()}
                   </p>
+                  <ProjectResults projectId={project.id} />
                 </li>
               ))}
             </ul>

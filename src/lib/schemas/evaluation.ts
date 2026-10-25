@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PROJECT_DURATION_WEEKS } from "@/lib/validation/project";
+import { MAX_DURATION_WEEKS } from "@/lib/validation/project";
 
 const nonEmpty = z.string().trim().min(1);
 
@@ -62,7 +62,7 @@ export const EvaluationSchema = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
   checkpointId: z.uuid(),
-  weekNumber: z.number().int().min(1).max(PROJECT_DURATION_WEEKS),
+  weekNumber: z.number().int().min(1).max(MAX_DURATION_WEEKS),
   suggestedScore: z.number().min(0).max(100),
   criteriaAssessments: z.array(CriterionAssessmentSchema),
   completedRequirements: z.array(nonEmpty),
