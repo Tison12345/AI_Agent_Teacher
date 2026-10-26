@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { fetchQueue, type QueueFilter } from "@/lib/api/client";
 import type { QueueItem } from "@/lib/schemas/review";
-import { quizTag, STATE_LABEL } from "./labels";
+import { quizTag, STATE_BADGE, STATE_LABEL } from "./labels";
+import { Icon } from "./ui";
 
 const FILTERS: { value: QueueFilter; label: string }[] = [
   { value: "pending_review", label: "Waiting for review" },
@@ -64,14 +65,16 @@ export function FacultyQueue() {
   }
 
   return (
-    <section aria-labelledby="queue-heading" className="space-y-4">
-      <h2 id="queue-heading" className="text-lg font-semibold">
-        Evaluations
-      </h2>
-      <p className="text-sm text-slate-600">
-        The AI&apos;s score is only a recommendation. Your decision is the official result, and students see only
-        what you approve.
-      </p>
+    <section aria-labelledby="queue-heading" className="space-y-5">
+      <div className="space-y-1">
+        <h2 id="queue-heading" className="text-xl font-semibold">
+          Evaluations
+        </h2>
+        <p className="text-sm text-muted">
+          The AI&apos;s score is only a recommendation. Your decision is the official result, and students see only
+          what you approve.
+        </p>
+      </div>
 
       <div role="group" aria-label="Filter by status" className="flex flex-wrap gap-2">
         {FILTERS.map((f) => (
@@ -80,10 +83,10 @@ export function FacultyQueue() {
             type="button"
             aria-pressed={filter === f.value}
             onClick={() => choose(f.value)}
-            className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
+            className={`rounded-full border px-4 py-1.5 text-sm font-medium transition duration-150 ${
               filter === f.value
-                ? "border-indigo-700 bg-indigo-700 text-white"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                ? "border-accent/60 bg-accent/15 text-accent"
+                : "border-line bg-card text-muted hover:border-primary/50 hover:text-fg"
             }`}
           >
             {f.label}
@@ -92,12 +95,12 @@ export function FacultyQueue() {
       </div>
 
       {load.status === "loading" && (
-        <p role="status" className="text-slate-600">
+        <p role="status" className="text-muted">
           Loading evaluations…
         </p>
       )}
       {load.status === "error" && (
-        <div role="alert" className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+        <div role="alert" className="alert-danger">
           <p>Could not load evaluations: {load.message}</p>
           <button
             type="button"
@@ -105,55 +108,53 @@ export function FacultyQueue() {
               setLoad({ status: "loading" });
               setAttempt((n) => n + 1);
             }}
-            className="mt-2 rounded-md border border-red-400 px-3 py-1 font-medium hover:bg-red-100"
+            className="btn-secondary btn-sm mt-3"
           >
             Try again
           </button>
         </div>
       )}
       {load.status === "ready" && load.items.length === 0 && (
-        <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-slate-600">
+        <p className="card border-dashed p-8 text-center text-muted">
           {filter === "pending_review" ? "Nothing is waiting for review." : "No evaluations match this filter."}
         </p>
       )}
       {load.status === "ready" && load.items.length > 0 && (
-        <ul className="space-y-3">
+        <ul className="space-y-4">
           {groupByProject(load.items).map((group) => (
             <li key={group.projectId}>
-              <details className="group rounded-lg border border-slate-200 bg-white shadow-sm">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 font-medium [&::-webkit-details-marker]:hidden">
+              <details className="card group transition duration-150 open:border-primary/40">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl p-5 text-lg font-semibold transition duration-150 hover:bg-card-hover [&::-webkit-details-marker]:hidden">
                   <span>{group.projectTitle}</span>
-                  <span className="flex items-center gap-2 text-xs font-normal text-slate-600">
-                    {group.weeks.length} {group.weeks.length === 1 ? "week" : "weeks"}
+                  <span className="flex items-center gap-3 text-xs font-normal text-muted">
+                    <span className="badge-neutral">
+                      {group.weeks.length} {group.weeks.length === 1 ? "week" : "weeks"}
+                    </span>
                     <span aria-hidden="true" className="text-base transition-transform group-open:rotate-180">
                       ▾
                     </span>
                   </span>
                 </summary>
 
-                <div className="space-y-2 border-t border-slate-100 p-3">
-                  <ul className="space-y-2">
+                <div className="space-y-3 border-t border-line p-4">
+                  <ul className="space-y-3">
                     {group.weeks.map((item) => (
                       <li
                         key={item.evaluationId}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 p-3 text-sm"
+                        className="well flex flex-wrap items-center justify-between gap-3 p-4 text-sm"
                       >
-                        <div className="space-y-1">
-                          <p className="font-medium">Week {item.weekNumber}</p>
-                          <p className="flex flex-wrap items-center gap-2 text-xs">
-                            <span className="text-slate-800">{scoreText(item)}</span>
-                            <span className="rounded bg-indigo-50 px-2 py-0.5 font-medium text-indigo-900">
-                              Quiz {quizTag(item.quiz)}
-                            </span>
+                        <div className="space-y-1.5">
+                          <p className="text-base font-semibold">Week {item.weekNumber}</p>
+                          <p className="flex flex-wrap items-center gap-2">
+                            <span className="text-base font-medium text-fg">{scoreText(item)}</span>
+                            <span className="badge-primary">Quiz {quizTag(item.quiz)}</span>
                           </p>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-800">
-                            {STATE_LABEL[item.status]}
-                          </span>
+                        <div className="flex items-center gap-3">
+                          <span className={STATE_BADGE[item.status]}>{STATE_LABEL[item.status]}</span>
                           <Link
                             href={`/faculty/evaluations/${item.evaluationId}`}
-                            className="rounded-md border border-indigo-700 px-3 py-1 font-medium text-indigo-700 hover:bg-indigo-50"
+                            className={item.status === "pending_review" ? "btn-primary btn-sm" : "btn-secondary btn-sm"}
                           >
                             {item.status === "pending_review" ? "Review" : "View"}
                             <span className="sr-only">
@@ -168,9 +169,9 @@ export function FacultyQueue() {
                   <div className="flex justify-end">
                     <Link
                       href={`/faculty/projects/${group.projectId}`}
-                      className="rounded-md border border-slate-300 px-3 py-1 text-lg leading-none text-indigo-700 hover:bg-indigo-50"
+                      className="btn-secondary btn-sm text-link"
                     >
-                      <span aria-hidden="true">→</span>
+                      <Icon name="arrow" className="h-4 w-4" />
                       <span className="sr-only">Open the overview of {group.projectTitle}</span>
                     </Link>
                   </div>

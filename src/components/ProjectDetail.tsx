@@ -41,41 +41,39 @@ export function ProjectDetail({ id }: { id: string }) {
   }, [id]);
 
   return (
-    <div className="space-y-4">
-      <Link href="/student" className="text-sm text-indigo-700 hover:underline">
+    <div className="space-y-8">
+      <Link href="/student" className="inline-flex text-sm font-medium text-link hover:text-fg">
         ← Back to projects
       </Link>
       {state.status === "loading" && (
-        <p role="status" className="text-slate-600">
+        <p role="status" className="text-muted">
           Loading project…
         </p>
       )}
       {state.status === "error" && (
-        <p
-          role="alert"
-          className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900"
-        >
+        <p role="alert" className="alert-danger">
           Could not load project: {state.message}
         </p>
       )}
       {state.status === "not_found" && (
-        <p role="alert" className="text-slate-700">
+        <p role="alert" className="text-fg">
           Project not found.
         </p>
       )}
       {state.status === "ready" && (
-        <article className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <h1 className="text-2xl font-semibold">{state.project.title}</h1>
-          <p className="mt-3 whitespace-pre-wrap text-slate-700">
+        <article className="card p-6 sm:p-8">
+          <p className="eyebrow">Project</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight">{state.project.title}</h1>
+          <p className="mt-3 max-w-3xl whitespace-pre-wrap text-muted">
             {state.project.description}
           </p>
-          <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-[10rem_1fr]">
-            <dt className="text-slate-500">GitHub repository</dt>
-            <dd className="break-all">{state.project.repoUrl}</dd>
-            <dt className="text-slate-500">Duration</dt>
-            <dd>{state.project.durationWeeks} weeks</dd>
-            <dt className="text-slate-500">Created</dt>
-            <dd>{new Date(state.project.createdAt).toLocaleString()}</dd>
+          <dl className="mt-6 grid gap-x-6 gap-y-3 border-t border-line pt-5 text-sm sm:grid-cols-[10rem_1fr]">
+            <dt className="text-muted">GitHub repository</dt>
+            <dd className="break-all font-medium">{state.project.repoUrl}</dd>
+            <dt className="text-muted">Duration</dt>
+            <dd className="font-medium">{state.project.durationWeeks} weeks</dd>
+            <dt className="text-muted">Created</dt>
+            <dd className="font-medium">{new Date(state.project.createdAt).toLocaleString()}</dd>
           </dl>
         </article>
       )}

@@ -299,6 +299,57 @@ describe("ProgressSection: the teacher's official result", () => {
   });
 });
 
+describe("ProgressSection: the summary cards", () => {
+  const decided = (weekNumber: number, status: "approved" | "edited" | "rejected") => ({ weekNumber, status });
+  const result = (weekNumber: number, officialScore: number | null, outcome = "approved") => ({
+    weekNumber,
+    outcome,
+    officialScore,
+    feedback: null,
+    decidedAt: "2026-10-26T12:00:00+00:00",
+  });
+  const card = (name: string) => screen.getByRole("region", { name }) as HTMLElement;
+
+  it("before any review: no average is invented, and the progress card counts the recorded weeks", async () => {
+    api.fetchProgress.mockResolvedValue(
+      progress({ baseline, checkpoints: [checkpoint(1), checkpoint(2)], evaluations: [submitted(1), submitted(2)] }),
+    );
+    render(<ProgressSection projectId={PROJECT} durationWeeks={4} />);
+    const average = await screen.findByRole("region", { name: "Average official result" });
+    expect(average).toHaveTextContent("No reviewed weeks yet");
+    expect(average.textContent).not.toMatch(/\d+\s*\/\s*100/);
+    const progressCard = card("Project progress");
+    expect(progressCard).toHaveTextContent("2of 4");
+    expect(progressCard).toHaveTextContent("0 reviewed");
+    expect(progressCard).toHaveTextContent("2 waiting for review");
+    expect(progressCard).toHaveTextContent("2 not recorded");
+    expect(within(progressCard).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
+  });
+
+  it("averages only the teacher's real official scores, ignoring a rejected week", async () => {
+    api.fetchProgress.mockResolvedValue(
+      progress({
+        baseline,
+        checkpoints: [checkpoint(1), checkpoint(2), checkpoint(3)],
+        evaluations: [decided(1, "approved"), decided(2, "edited"), decided(3, "rejected")],
+      }),
+    );
+    api.fetchResults.mockResolvedValue([result(1, 80), result(2, 65), result(3, null, "rejected")]);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={4} />);
+    const average = await screen.findByRole("region", { name: "Average official result" });
+    await within(average).findByText("72.5");
+    expect(average).toHaveTextContent("Average of 2 teacher-approved weeks out of 4. This is not a final grade.");
+    expect(within(average).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "73");
+    // The chart shows each week's real result and a dash where there is none.
+    const bars = within(average).getByRole("group", { name: "Official result by week" });
+    expect(bars).toHaveTextContent("W1: 80 out of 100");
+    expect(bars).toHaveTextContent("W2: 65 out of 100");
+    expect(bars).toHaveTextContent("W3 has no official result");
+    expect(bars).toHaveTextContent("W4 has no official result");
+    expect(card("Project progress")).toHaveTextContent("3 reviewed");
+  });
+});
+
 describe("ProgressSection: the project decides how many weeks are listed", () => {
   it.each([1, 4, 16])("lists exactly %i weeks for a project of that length", async (durationWeeks) => {
     api.fetchProgress.mockResolvedValue(progress({ baseline }));

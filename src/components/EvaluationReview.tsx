@@ -55,19 +55,19 @@ export function EvaluationReview({ id }: { id: string }) {
   }
 
   return (
-    <div className="space-y-5">
-      <Link href="/faculty" className="text-sm text-indigo-700 hover:underline">
+    <div className="space-y-6">
+      <Link href="/faculty" className="inline-flex text-sm font-medium text-link hover:text-fg">
         ← Back to the review queue
       </Link>
 
       {load.status === "loading" && <p role="status">Loading evaluation…</p>}
       {load.status === "missing" && (
-        <p role="alert" className="rounded-md border border-slate-300 bg-white p-4">
+        <p role="alert" className="card p-5">
           This evaluation does not exist.
         </p>
       )}
       {load.status === "error" && (
-        <div role="alert" className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+        <div role="alert" className="alert-danger">
           <p>Could not load the evaluation: {load.message}</p>
           <button
             type="button"
@@ -75,7 +75,7 @@ export function EvaluationReview({ id }: { id: string }) {
               setLoad({ status: "loading" });
               setAttempt((n) => n + 1);
             }}
-            className="mt-2 rounded-md border border-red-400 px-3 py-1 font-medium hover:bg-red-100"
+            className="btn-secondary btn-sm mt-3"
           >
             Try again
           </button>
@@ -91,58 +91,59 @@ function Detail({ detail, onDecided }: { detail: ReviewDetail; onDecided: (d: Te
   const scope = e.reviewScope;
   return (
     <>
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">
+      <header className="space-y-1.5">
+        <p className="eyebrow">Evaluation review</p>
+        <h1 className="text-3xl font-bold tracking-tight">
           {project.title} · Week {e.weekNumber}
         </h1>
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted">
           Repository: {project.repoUrl} · evaluated {new Date(e.createdAt).toLocaleString()} by {e.model}
         </p>
       </header>
 
-      <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+      <p className="alert-warning">
         The AI&apos;s score is only a <strong>recommendation</strong>. Your decision below is the official result. A Git
         diff shows what changed; it is evidence of changes, not proof of who wrote the code or that the student
         understands it. The code was never run.
       </p>
 
-      <section aria-labelledby="ai-heading" className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-        <h2 id="ai-heading" className="text-lg font-semibold">
+      <section aria-labelledby="ai-heading" className="card-hero space-y-4 p-6 sm:p-8">
+        <h2 id="ai-heading" className="text-xl font-semibold">
           AI recommendation (not official)
         </h2>
-        <p className="text-3xl font-semibold" aria-label={`AI suggested score ${e.suggestedScore} out of 100`}>
+        <p className="text-6xl font-bold tabular-nums tracking-tight sm:text-7xl" aria-label={`AI suggested score ${e.suggestedScore} out of 100`}>
           {e.suggestedScore}
-          <span className="text-lg font-normal text-slate-600"> / 100</span>
+          <span className="text-2xl font-medium text-muted"> / 100</span>
         </p>
         <p className="text-sm">
           Confidence: <strong>{e.confidence.level}</strong>
         </p>
         {e.confidence.uncertainties.length > 0 && (
-          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-fg">
             {e.confidence.uncertainties.map((u) => (
               <li key={u}>{u}</li>
             ))}
           </ul>
         )}
 
-        <h3 className="pt-2 font-medium">Criteria</h3>
+        <h3 className="eyebrow pt-2">Criteria</h3>
         <ul className="space-y-3">
           {e.criteriaAssessments.map((c) => (
-            <li key={c.criterion} className="rounded-md border border-slate-200 p-3 text-sm">
-              <p className="font-medium">
+            <li key={c.criterion} className="well p-4 text-sm">
+              <p className="font-semibold">
                 {c.criterion}: {c.score}/{c.maxScore}
               </p>
-              <p className="text-slate-700">{c.rationale}</p>
+              <p className="text-fg">{c.rationale}</p>
               {c.evidence.length > 0 ? (
-                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-slate-600">
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted">
                   {c.evidence.map((ev, i) => (
                     <li key={i}>
-                      {ev.filePath && <code className="rounded bg-slate-100 px-1">{ev.filePath}</code>} {ev.summary}
+                      {ev.filePath && <code className="rounded-md bg-canvas/70 px-1.5 py-0.5 font-mono text-xs">{ev.filePath}</code>} {ev.summary}
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="mt-1 text-slate-500">No evidence cited.</p>
+                <p className="mt-1 text-muted">No evidence cited.</p>
               )}
             </li>
           ))}
@@ -156,8 +157,8 @@ function Detail({ detail, onDecided }: { detail: ReviewDetail; onDecided: (d: Te
 
       <FacultyQuiz evaluationId={e.id} />
 
-      <section aria-labelledby="scope-heading"className="space-y-2 rounded-lg border border-slate-200 bg-white p-4 text-sm">
-        <h2 id="scope-heading" className="text-lg font-semibold">
+      <section aria-labelledby="scope-heading" className="card space-y-2 p-6 text-sm">
+        <h2 id="scope-heading" className="text-xl font-semibold">
           What the AI could see
         </h2>
         <p>
@@ -166,10 +167,10 @@ function Detail({ detail, onDecided }: { detail: ReviewDetail; onDecided: (d: Te
           {scope.filesBeyondLimit > 0 && `, ${scope.filesBeyondLimit} more beyond the file limit`}. Code executed: no.
         </p>
         {scope.notReviewed.length > 0 && (
-          <ul className="list-disc space-y-0.5 pl-5 text-slate-700">
+          <ul className="list-disc space-y-0.5 pl-5 text-fg">
             {scope.notReviewed.map((f) => (
               <li key={f.path}>
-                <code className="rounded bg-slate-100 px-1">{f.path}</code> not reviewed ({REASON_LABEL[f.reason] ?? f.reason})
+                <code className="rounded-md bg-canvas/70 px-1.5 py-0.5 font-mono text-xs">{f.path}</code> not reviewed ({REASON_LABEL[f.reason] ?? f.reason})
               </li>
             ))}
           </ul>
@@ -177,30 +178,30 @@ function Detail({ detail, onDecided }: { detail: ReviewDetail; onDecided: (d: Te
       </section>
 
       <section aria-labelledby="diff-heading" className="space-y-2">
-        <h2 id="diff-heading" className="text-lg font-semibold">
+        <h2 id="diff-heading" className="text-xl font-semibold">
           Changes the AI was shown
         </h2>
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted">
           {snapshot.totalFiles} {snapshot.totalFiles === 1 ? "file" : "files"} changed (+{snapshot.totalAdditions} −
           {snapshot.totalDeletions}) between the two recorded commits.
         </p>
         {snapshot.files.map((f) => (
-          <details key={f.path} className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+          <details key={f.path} className="card p-4 text-sm open:border-primary/40">
             <summary className="cursor-pointer font-medium">
               <code>{f.path}</code> · {f.status} · +{f.additions} −{f.deletions}
             </summary>
             {f.patch !== undefined ? (
-              <pre className="mt-2 overflow-x-auto rounded bg-slate-900 p-3 text-xs text-slate-100">
+              <pre className="mt-3 overflow-x-auto rounded-xl border border-line bg-canvas p-4 font-mono text-xs leading-relaxed text-fg">
                 {f.patch}
                 {f.patchTruncated ? "\n… (cut because of size)" : ""}
               </pre>
             ) : (
-              <p className="mt-2 text-slate-600">The AI was not shown the contents of this file.</p>
+              <p className="mt-2 text-muted">The AI was not shown the contents of this file.</p>
             )}
           </details>
         ))}
         {snapshot.filesOmitted > 0 && (
-          <p className="text-sm text-slate-600">{snapshot.filesOmitted} more files were not stored.</p>
+          <p className="text-sm text-muted">{snapshot.filesOmitted} more files were not stored.</p>
         )}
       </section>
 
@@ -213,8 +214,8 @@ function TextList({ title, items }: { title: string; items: string[] }) {
   if (items.length === 0) return null;
   return (
     <div className="text-sm">
-      <h3 className="font-medium">{title}</h3>
-      <ul className="list-disc space-y-0.5 pl-5 text-slate-700">
+      <h3 className="eyebrow mb-1">{title}</h3>
+      <ul className="list-disc space-y-0.5 pl-5 text-fg">
         {items.map((item) => (
           <li key={item}>{item}</li>
         ))}
@@ -226,8 +227,8 @@ function TextList({ title, items }: { title: string; items: string[] }) {
 function Decided({ decision, suggested }: { decision: TeacherDecision; suggested: number }) {
   const label = { approve: "Approved", edit: "Edited", reject: "Rejected" }[decision.decision];
   return (
-    <section aria-labelledby="official-heading" className="space-y-2 rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-sm">
-      <h2 id="official-heading" className="text-lg font-semibold">
+    <section aria-labelledby="official-heading" className="alert-success space-y-3 p-6 text-sm">
+      <h2 id="official-heading" className="text-xl font-semibold">
         Official decision: {label}
       </h2>
       {decision.approvedScore !== null ? (
@@ -240,17 +241,17 @@ function Decided({ decision, suggested }: { decision: TeacherDecision; suggested
       )}
       {decision.approvedFeedback && (
         <div>
-          <p className="font-medium">Feedback shown to the student</p>
-          <p className="whitespace-pre-line text-slate-800">{decision.approvedFeedback}</p>
+          <p className="font-semibold">Feedback shown to the student</p>
+          <p className="whitespace-pre-line text-fg">{decision.approvedFeedback}</p>
         </div>
       )}
       {decision.comment && (
         <div>
-          <p className="font-medium">Your private comment</p>
-          <p className="whitespace-pre-line text-slate-800">{decision.comment}</p>
+          <p className="font-semibold">Your private comment</p>
+          <p className="whitespace-pre-line text-fg">{decision.comment}</p>
         </div>
       )}
-      <p className="text-xs text-slate-600">Decided {new Date(decision.decidedAt).toLocaleString()}. This is final.</p>
+      <p className="text-xs text-muted">Decided {new Date(decision.decidedAt).toLocaleString()}. This is final.</p>
     </section>
   );
 }
@@ -328,13 +329,13 @@ function DecisionForm({ detail, onDecided }: { detail: ReviewDetail; onDecided: 
         : "Reject the AI's evaluation. The student gets no score for this week.";
 
   return (
-    <section aria-labelledby="decision-heading" className="space-y-4 rounded-lg border border-indigo-300 bg-white p-4">
-      <h2 id="decision-heading" className="text-lg font-semibold">
+    <section aria-labelledby="decision-heading" className="card space-y-5 border-primary/40 p-6">
+      <h2 id="decision-heading" className="text-xl font-semibold">
         Your decision
       </h2>
 
       <fieldset className="space-y-2" disabled={busy}>
-        <legend className="text-sm font-medium">What do you want to do?</legend>
+        <legend className="mb-1 text-sm font-semibold">What do you want to do?</legend>
         {(
           [
             ["approve", "Approve", "Use the AI's score and feedback as they are."],
@@ -342,7 +343,10 @@ function DecisionForm({ detail, onDecided }: { detail: ReviewDetail; onDecided: 
             ["reject", "Reject", "The evaluation is not reliable; the student gets no score."],
           ] as const
         ).map(([value, label, help]) => (
-          <label key={value} className="flex items-start gap-2 text-sm">
+          <label
+            key={value}
+            className="flex cursor-pointer items-start gap-3 rounded-xl border border-line p-3 text-sm transition duration-150 hover:border-primary/50 has-[:checked]:border-accent/60 has-[:checked]:bg-accent/10"
+          >
             <input
               type="radio"
               name="decision"
@@ -353,10 +357,10 @@ function DecisionForm({ detail, onDecided }: { detail: ReviewDetail; onDecided: 
                 setErrors({});
                 setConfirming(false);
               }}
-              className="mt-1"
+              className="mt-1 accent-[var(--color-accent)]"
             />
             <span>
-              <span className="font-medium">{label}</span> – {help}
+              <span className="font-semibold">{label}</span> – {help}
             </span>
           </label>
         ))}
@@ -382,10 +386,10 @@ function DecisionForm({ detail, onDecided }: { detail: ReviewDetail; onDecided: 
               }}
               aria-invalid={Boolean(errors.approvedScore)}
               aria-describedby={errors.approvedScore ? "score-error" : undefined}
-              className="mt-1 w-32 rounded-md border border-slate-300 px-2 py-1"
+              className="field mt-1 w-32"
             />
             {errors.approvedScore && (
-              <p id="score-error" role="alert" className="mt-1 text-sm text-red-800">
+              <p id="score-error" role="alert" className="mt-1 text-sm text-danger">
                 {errors.approvedScore}
               </p>
             )}
@@ -404,10 +408,10 @@ function DecisionForm({ detail, onDecided }: { detail: ReviewDetail; onDecided: 
               }}
               aria-invalid={Boolean(errors.approvedFeedback)}
               aria-describedby={errors.approvedFeedback ? "feedback-error" : undefined}
-              className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1"
+              className="field mt-1"
             />
             {errors.approvedFeedback && (
-              <p id="feedback-error" role="alert" className="mt-1 text-sm text-red-800">
+              <p id="feedback-error" role="alert" className="mt-1 text-sm text-danger">
                 {errors.approvedFeedback}
               </p>
             )}
@@ -416,10 +420,10 @@ function DecisionForm({ detail, onDecided }: { detail: ReviewDetail; onDecided: 
       )}
 
       {choice === "approve" && (
-        <div className="rounded-md bg-slate-50 p-3 text-sm">
-          <p className="font-medium">The student will see</p>
+        <div className="well p-4 text-sm">
+          <p className="eyebrow mb-1">The student will see</p>
           <p>Official score: {e.suggestedScore}/100</p>
-          <p className="whitespace-pre-line text-slate-700">{aiFeedback}</p>
+          <p className="whitespace-pre-line text-fg">{aiFeedback}</p>
         </div>
       )}
 
@@ -427,7 +431,7 @@ function DecisionForm({ detail, onDecided }: { detail: ReviewDetail; onDecided: 
         <label htmlFor="comment" className="block text-sm font-medium">
           {choice === "approve" ? "Private comment (optional)" : "Private comment (required)"}
         </label>
-        <p className="text-xs text-slate-500">Only teachers see this. Students never do.</p>
+        <p className="text-xs text-muted">Only teachers see this. Students never do.</p>
         <textarea
           id="comment"
           rows={3}
@@ -438,30 +442,30 @@ function DecisionForm({ detail, onDecided }: { detail: ReviewDetail; onDecided: 
           }}
           aria-invalid={Boolean(errors.comment)}
           aria-describedby={errors.comment ? "comment-error" : undefined}
-          className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1"
+          className="field mt-1"
         />
         {errors.comment && (
-          <p id="comment-error" role="alert" className="mt-1 text-sm text-red-800">
+          <p id="comment-error" role="alert" className="mt-1 text-sm text-danger">
             {errors.comment}
           </p>
         )}
       </div>
 
       {formError && (
-        <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+        <p role="alert" className="alert-danger">
           {formError}
         </p>
       )}
 
       {confirming ? (
-        <div role="group" aria-label="Confirm decision" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
-          <p className="text-amber-950">{summary} A decision is final and cannot be changed.</p>
+        <div role="group" aria-label="Confirm decision" className="alert-warning">
+          <p className="text-fg">{summary} A decision is final and cannot be changed.</p>
           <div className="mt-2 flex gap-2">
             <button
               type="button"
               onClick={submit}
               disabled={busy}
-              className="rounded-md bg-indigo-700 px-3 py-1.5 font-medium text-white hover:bg-indigo-800 disabled:opacity-60"
+              className="btn-primary btn-sm"
             >
               {busy ? "Saving…" : "Yes, record decision"}
             </button>
@@ -469,7 +473,7 @@ function DecisionForm({ detail, onDecided }: { detail: ReviewDetail; onDecided: 
               type="button"
               onClick={() => setConfirming(false)}
               disabled={busy}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+              className="btn-secondary btn-sm"
             >
               Cancel
             </button>
@@ -479,7 +483,7 @@ function DecisionForm({ detail, onDecided }: { detail: ReviewDetail; onDecided: 
         <button
           type="button"
           onClick={review}
-          className="rounded-md bg-indigo-700 px-4 py-2 font-medium text-white hover:bg-indigo-800"
+          className="btn-primary"
         >
           Review decision
         </button>

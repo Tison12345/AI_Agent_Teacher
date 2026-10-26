@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { fetchProjectOverview } from "@/lib/api/client";
 import type { ProjectOverview as Overview, WeekOverview } from "@/lib/schemas/overview";
-import { quizText, STATE_LABEL } from "./labels";
+import { quizText, STATE_BADGE, STATE_LABEL } from "./labels";
+import { ProgressBar, ScoreCard, WeekScoreBars } from "./ui";
 
 type Load =
   | { status: "loading" }
@@ -36,18 +37,18 @@ export function ProjectOverview({ id }: { id: string }) {
 
   return (
     <div className="space-y-5">
-      <Link href="/faculty" className="text-sm text-indigo-700 hover:underline">
+      <Link href="/faculty" className="inline-flex text-sm font-medium text-link hover:text-fg">
         ← Back to the faculty dashboard
       </Link>
 
       {load.status === "loading" && <p role="status">Loading project…</p>}
       {load.status === "missing" && (
-        <p role="alert" className="rounded-md border border-slate-300 bg-white p-4">
+        <p role="alert" className="card p-5">
           This project does not exist.
         </p>
       )}
       {load.status === "error" && (
-        <div role="alert" className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+        <div role="alert" className="alert-danger">
           <p>Could not load the project: {load.message}</p>
           <button
             type="button"
@@ -55,7 +56,7 @@ export function ProjectOverview({ id }: { id: string }) {
               setLoad({ status: "loading" });
               setAttempt((n) => n + 1);
             }}
-            className="mt-2 rounded-md border border-red-400 px-3 py-1 font-medium hover:bg-red-100"
+            className="btn-secondary btn-sm mt-3"
           >
             Try again
           </button>
@@ -69,18 +70,60 @@ export function ProjectOverview({ id }: { id: string }) {
 function Detail({ overview }: { overview: Overview }) {
   const { project, weeks } = overview;
   const recorded = weeks.filter((w) => w.state !== "not_recorded").length;
+  const scored = weeks.flatMap((w) => (w.officialScore === null ? [] : [w.officialScore]));
+  const average = scored.length === 0 ? null : Math.round((scored.reduce((a, b) => a + b, 0) / scored.length) * 10) / 10;
+  const reviewed = weeks.filter((w) => ["approved", "edited", "rejected"].includes(w.state)).length;
+  const waiting = weeks.filter((w) => w.state === "pending_review").length;
+  const quizzes = weeks.filter((w) => w.quiz.status === "taken");
   return (
     <>
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">{project.title}</h1>
-        <p className="text-sm text-slate-700">{project.description}</p>
-        <p className="text-sm text-slate-600">
+      <header className="space-y-1.5">
+        <p className="eyebrow">Project overview</p>
+        <h1 className="text-3xl font-bold tracking-tight">{project.title}</h1>
+        <p className="max-w-3xl text-muted">{project.description}</p>
+        <p className="text-sm text-muted">
           Repository: {project.repoUrl} · {recorded} of {project.durationWeeks}{" "}
           {project.durationWeeks === 1 ? "week" : "weeks"} recorded
         </p>
       </header>
 
-      <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+      <div className="grid gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <ScoreCard
+            hero
+            label="Average official score"
+            score={average}
+            empty="No reviewed weeks yet"
+            caption={
+              average === null
+                ? "Your official scores appear here after you review a week."
+                : `Average of ${scored.length} official ${scored.length === 1 ? "score" : "scores"} out of ${project.durationWeeks} ${project.durationWeeks === 1 ? "week" : "weeks"}. Not a final grade.`
+            }
+          >
+            <WeekScoreBars
+              weeks={weeks.map((w) => ({ weekNumber: w.weekNumber, score: w.officialScore, note: STATE_LABEL[w.state] }))}
+            />
+          </ScoreCard>
+        </div>
+        <section aria-label="Review progress" className="card flex flex-col justify-between gap-5 p-6">
+          <div>
+            <p className="eyebrow">Weeks reviewed</p>
+            <p className="mt-2 flex items-baseline gap-2">
+              <span className="text-5xl font-bold tabular-nums tracking-tight">{reviewed}</span>
+              <span className="text-xl font-medium text-muted">of {project.durationWeeks}</span>
+            </p>
+          </div>
+          <ProgressBar percent={(reviewed / project.durationWeeks) * 100} label="Weeks reviewed as a percentage of the project" />
+          <p className="flex flex-wrap gap-2">
+            {waiting > 0 && <span className="badge-warning">{waiting} waiting for review</span>}
+            <span className="badge-primary">
+              {quizzes.length} {quizzes.length === 1 ? "quiz" : "quizzes"} taken
+            </span>
+          </p>
+        </section>
+      </div>
+
+      <p className="alert-warning">
         The AI&apos;s score is only a <strong>recommendation</strong>. The official score is the one you set. The student
         quiz is separate evidence of understanding and is not part of either score.
       </p>
@@ -97,24 +140,24 @@ function Detail({ overview }: { overview: Overview }) {
 function WeekCard({ week }: { week: WeekOverview }) {
   const recorded = week.state !== "not_recorded";
   return (
-    <li className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-sm">
+    <li className="card space-y-4 p-5 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">
+        <h2 className="text-lg font-semibold">
           Week {week.weekNumber}
           {week.title ? ` · ${week.title}` : ""}
         </h2>
-        <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-800">{STATE_LABEL[week.state]}</span>
+        <span className={STATE_BADGE[week.state]}>{STATE_LABEL[week.state]}</span>
       </div>
 
-      {!recorded && <p className="text-slate-600">The student has not recorded this week yet.</p>}
+      {!recorded && <p className="text-muted">The student has not recorded this week yet.</p>}
 
       {recorded && (
         <>
           {week.recordedAt && (
-            <p className="text-xs text-slate-600">Recorded {new Date(week.recordedAt).toLocaleString()}</p>
+            <p className="text-xs text-muted">Recorded {new Date(week.recordedAt).toLocaleString()}</p>
           )}
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-3">
             <Score label="Official score" value={officialText(week)} strong />
             <Score
               label="AI recommendation (not official)"
@@ -125,20 +168,20 @@ function WeekCard({ week }: { week: WeekOverview }) {
 
           {week.teacherFeedback && (
             <div>
-              <h3 className="font-medium">Feedback shown to the student</h3>
-              <p className="whitespace-pre-line text-slate-800">{week.teacherFeedback}</p>
+              <h3 className="eyebrow mb-1">Feedback shown to the student</h3>
+              <p className="whitespace-pre-line text-fg">{week.teacherFeedback}</p>
             </div>
           )}
           {week.teacherComment && (
             <div>
-              <h3 className="font-medium">Your private comment</h3>
-              <p className="whitespace-pre-line text-slate-800">{week.teacherComment}</p>
+              <h3 className="eyebrow mb-1">Your private comment</h3>
+              <p className="whitespace-pre-line text-fg">{week.teacherComment}</p>
             </div>
           )}
 
           {week.ai && (
-            <div className="space-y-2 rounded-md bg-slate-50 p-3">
-              <h3 className="font-medium">AI findings</h3>
+            <div className="well space-y-3 p-4">
+              <h3 className="font-semibold">AI findings</h3>
               <TextList title="Completed" items={week.ai.completed} />
               <TextList title="Incomplete" items={week.ai.incomplete} />
               <TextList title="Technical concerns" items={week.ai.concerns} />
@@ -149,7 +192,7 @@ function WeekCard({ week }: { week: WeekOverview }) {
           {week.evaluationId && (
             <Link
               href={`/faculty/evaluations/${week.evaluationId}`}
-              className="inline-block rounded-md border border-indigo-700 px-3 py-1.5 font-medium text-indigo-700 hover:bg-indigo-50"
+              className={week.state === "pending_review" ? "btn-primary btn-sm" : "btn-secondary btn-sm"}
             >
               {week.state === "pending_review" ? "Review this week" : "Open full review"}
               <span className="sr-only"> for week {week.weekNumber}</span>
@@ -171,9 +214,9 @@ function officialText(week: WeekOverview): string {
 
 function Score({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className="rounded-md border border-slate-200 p-3">
-      <p className="text-xs text-slate-600">{label}</p>
-      <p className={strong ? "text-base font-semibold" : "text-sm font-medium"}>{value}</p>
+    <div className={`well p-4 ${strong ? "border-primary/40" : ""}`}>
+      <p className="text-xs text-muted">{label}</p>
+      <p className={strong ? "mt-0.5 text-xl font-bold" : "mt-0.5 text-sm font-semibold"}>{value}</p>
     </div>
   );
 }
@@ -182,8 +225,8 @@ function TextList({ title, items }: { title: string; items: string[] }) {
   if (items.length === 0) return null;
   return (
     <div>
-      <h4 className="text-xs font-medium uppercase tracking-wide text-slate-600">{title}</h4>
-      <ul className="list-disc space-y-0.5 pl-5 text-slate-700">
+      <h4 className="eyebrow">{title}</h4>
+      <ul className="list-disc space-y-0.5 pl-5 text-fg">
         {items.map((item) => (
           <li key={item}>{item}</li>
         ))}

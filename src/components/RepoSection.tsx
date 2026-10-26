@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { fetchRepoInfo } from "@/lib/api/client";
 import type { RepoInfo } from "@/lib/schemas/repo-info";
+import { Icon } from "./ui";
 
 type State =
   | { status: "idle" }
@@ -28,21 +29,18 @@ export function RepoSection({ projectId }: { projectId: string }) {
 
   return (
     <section aria-labelledby="repo-heading" className="space-y-3">
-      <h2 id="repo-heading" className="text-lg font-semibold">
-        GitHub repository
-      </h2>
-
-      <button
-        type="button"
-        onClick={check}
-        disabled={state.status === "loading"}
-        className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {state.status === "loading" ? "Checking…" : "Check repository"}
-      </button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="repo-heading" className="text-xl font-semibold">
+          GitHub repository
+        </h2>
+        <button type="button" onClick={check} disabled={state.status === "loading"} className="btn-secondary">
+          <Icon name="repo" className="h-4 w-4" />
+          {state.status === "loading" ? "Checking…" : "Check repository"}
+        </button>
+      </div>
 
       {state.status === "error" && (
-        <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+        <p role="alert" className="alert-danger">
           {state.message}
         </p>
       )}
@@ -55,35 +53,31 @@ export function RepoSection({ projectId }: { projectId: string }) {
 function RepoDetails({ info }: { info: RepoInfo }) {
   const { repository, head } = info;
   return (
-    <div role="status" className="rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-sm">
-      <dl className="grid gap-2 sm:grid-cols-[10rem_1fr]">
-        <dt className="text-slate-500">Repository</dt>
-        <dd>
-          <a href={repository.htmlUrl} className="text-indigo-700 hover:underline" target="_blank" rel="noreferrer">
+    <div role="status" className="card p-5 text-sm">
+      <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-[10rem_1fr]">
+        <dt className="text-muted">Repository</dt>
+        <dd className="flex flex-wrap items-center gap-2">
+          <a href={repository.htmlUrl} className="font-medium text-link hover:underline" target="_blank" rel="noreferrer">
             {repository.fullName}
-          </a>{" "}
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">
-            {repository.isPrivate ? "Private" : "Public"}
-          </span>
-          {repository.archived && (
-            <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900">Archived</span>
-          )}
+          </a>
+          <span className="badge-neutral">{repository.isPrivate ? "Private" : "Public"}</span>
+          {repository.archived && <span className="badge-warning">Archived</span>}
         </dd>
-        <dt className="text-slate-500">Default branch</dt>
+        <dt className="text-muted">Default branch</dt>
         <dd>{repository.defaultBranch}</dd>
-        <dt className="text-slate-500">Latest commit</dt>
+        <dt className="text-muted">Latest commit</dt>
         <dd>
           {info.isEmpty || !head ? (
-            <span className="text-amber-800">No commits yet. Push some work first.</span>
+            <span className="text-warning">No commits yet. Push some work first.</span>
           ) : (
             <>
-              <code className="rounded bg-slate-100 px-1">{head.sha.slice(0, 7)}</code> {head.message}
+              <code className="rounded-md bg-canvas/70 px-1.5 py-0.5 font-mono text-xs">{head.sha.slice(0, 7)}</code> {head.message}
             </>
           )}
         </dd>
       </dl>
       {info.rateLimit && (
-        <p className="mt-3 text-xs text-slate-500">
+        <p className="mt-3 text-xs text-muted">
           GitHub requests left this hour: {info.rateLimit.remaining} of {info.rateLimit.limit}
           {info.authenticated ? " (server token in use)" : " (no server token configured)"}.
         </p>

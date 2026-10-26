@@ -101,6 +101,15 @@ Live tests are in `*.live.test.ts` and are excluded from `npm test`. Each create
 
 "Who it is for" is a convention only: **nothing enforces it yet.**
 
+## Design system
+
+The interface is a dark theme built from a small set of tokens in `src/app/globals.css`, so the palette can be changed in one place:
+
+- **Colours** (`bg-canvas`, `bg-card`, `border-line`, `text-fg`, `text-muted`, `text-link`, `text-success`, `text-warning`, `text-danger`, accent `cyan`, primary `indigo`/`violet`). Components use these names, never raw hex values.
+- **Shared classes** (Tailwind utilities defined in the same file): `card`, `card-hero`, `card-interactive`, `well`, `btn-primary`/`btn-secondary`/`btn-ghost`/`btn-sm`, `field`, `badge-*`, `alert-*`, `progress`, `eyebrow`.
+- **Shared components** in `src/components/ui.tsx`: `ScoreCard` (large score with a progress bar; says why when there is no score), `ProgressBar`, `WeekScoreBars`, `StatCard`, `PageHeader`, `Icon`. Status is always shown with a text label as well as a colour.
+- The average-score and bar-chart figures are computed from real data only: the teacher's official scores, never the AI's, and a week with no score shows a dash.
+
 ## Testing
 
 `npm test` runs unit, route, component and end-to-end workflow tests (`src/e2e/workflow.test.ts` drives the real route handlers from project creation to the student seeing the teacher's score, with fake GitHub and Gemini). The results are in the final test report delivered with this phase.

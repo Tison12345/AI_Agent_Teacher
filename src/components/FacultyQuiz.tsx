@@ -35,27 +35,27 @@ export function FacultyQuiz({ evaluationId }: { evaluationId: string }) {
   }, [evaluationId]);
 
   return (
-    <section aria-labelledby="quiz-heading" className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-      <h2 id="quiz-heading" className="text-lg font-semibold">
+    <section aria-labelledby="quiz-heading" className="card space-y-4 p-6">
+      <h2 id="quiz-heading" className="text-xl font-semibold">
         Student quiz (separate evidence)
       </h2>
       {load.status === "loading" && <p role="status">Loading quiz result…</p>}
       {load.status === "error" && (
-        <p role="alert" className="text-sm text-red-900">
+        <p role="alert" className="alert-danger">
           Could not load the quiz result: {load.message}
         </p>
       )}
       {load.status === "ready" && !load.quiz && (
-        <p className="text-sm text-slate-700">No quiz has been created for this week. The student has not started it.</p>
+        <p className="text-sm text-fg">No quiz has been created for this week. The student has not started it.</p>
       )}
       {load.status === "ready" && load.quiz?.state === "open" && (
-        <p className="text-sm text-slate-700">
+        <p className="text-sm text-fg">
           A quiz exists for this week, but the student has not submitted an attempt yet.
         </p>
       )}
       {load.status === "ready" && load.quiz?.state === "taken" && (
         <>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted">
             The quiz is about the student&apos;s own code changes. It shows whether they can explain what they pushed; it
             does not change the AI&apos;s score.
           </p>

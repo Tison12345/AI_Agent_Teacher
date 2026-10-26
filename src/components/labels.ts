@@ -11,6 +11,16 @@ export const STATE_LABEL: Record<WeekState, string> = {
   rejected: "Rejected",
 };
 
+/** The badge style for each state: colour plus the text label above, never colour alone. */
+export const STATE_BADGE: Record<WeekState, string> = {
+  not_recorded: "badge-neutral",
+  not_evaluated: "badge-neutral",
+  pending_review: "badge-warning",
+  approved: "badge-success",
+  edited: "badge-success",
+  rejected: "badge-danger",
+};
+
 /** A short quiz tag for a card: "1/5", or a word when there is no result. */
 export function quizTag(quiz: QuizSummary): string {
   if (quiz.status === "taken") return `${quiz.correctCount}/${quiz.total}`;

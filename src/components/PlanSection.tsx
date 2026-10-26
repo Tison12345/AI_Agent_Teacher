@@ -55,66 +55,62 @@ export function PlanSection({ projectId, durationWeeks }: { projectId: string; d
 
   return (
     <section aria-labelledby="plan-heading" className="space-y-3">
-      <h2 id="plan-heading" className="text-lg font-semibold">
+      <h2 id="plan-heading" className="text-xl font-semibold">
         {durationWeeks}-week plan
       </h2>
 
       {state.status === "loading" && (
-        <p role="status" className="text-slate-600">
+        <p role="status" className="text-muted">
           Loading plan…
         </p>
       )}
 
       {state.status === "load_error" && (
-        <div role="alert" className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+        <div role="alert" className="alert-danger">
           <p>Could not load the plan: {state.message}</p>
-          <button
-            type="button"
-            onClick={reload}
-            className="mt-2 rounded-md border border-red-400 px-3 py-1 font-medium hover:bg-red-100"
-          >
+          <button type="button" onClick={reload} className="btn-secondary btn-sm mt-3">
             Try again
           </button>
         </div>
       )}
 
       {(state.status === "empty" || state.status === "generate_error") && (
-        <div className="space-y-3 rounded-lg border border-dashed border-slate-300 bg-white p-6">
-          <p className="text-slate-600">
+        <div className="card space-y-4 border-dashed p-6">
+          <p className="text-muted">
             No plan yet. Generate a {durationWeeks}-week plan from your project description.
           </p>
           {state.status === "generate_error" && (
-            <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+            <p role="alert" className="alert-danger">
               {state.message}
             </p>
           )}
-          <button
-            type="button"
-            onClick={handleGenerate}
-            className="rounded-md bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800"
-          >
+          <button type="button" onClick={handleGenerate} className="btn-primary">
             {state.status === "generate_error" ? "Try again" : "Generate plan"}
           </button>
         </div>
       )}
 
       {state.status === "generating" && (
-        <div role="status" className="rounded-lg border border-slate-200 bg-white p-6 text-slate-700">
+        <div role="status" className="card flex items-center gap-3 p-6 text-fg">
+          <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
           Generating your plan with Gemini… this can take up to a minute.
         </div>
       )}
 
       {state.status === "ready" && (
         <div className="space-y-2">
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted">
             AI-generated with {state.plan.model} on{" "}
             {new Date(state.plan.generatedAt).toLocaleString()}. Review it before relying on it.
           </p>
           <ol className="space-y-2">
             {state.plan.plan.map((week) => (
               <li key={week.weekNumber}>
-                <details className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                  <summary className="cursor-pointer font-medium">
+                <details className="card group p-4 transition duration-150 open:border-primary/40">
+                  <summary className="cursor-pointer list-none font-semibold [&::-webkit-details-marker]:hidden">
+                    <span aria-hidden="true" className="mr-2 inline-block text-muted transition-transform group-open:rotate-90">
+                      ▸
+                    </span>
                     Week {week.weekNumber}: {week.title}
                   </summary>
                   <div className="mt-3 space-y-3 text-sm">
@@ -122,8 +118,8 @@ export function PlanSection({ projectId, durationWeeks }: { projectId: string; d
                     <PlanList title="Tasks" items={week.tasks} />
                     <PlanList title="Expected result" items={week.deliverables} />
                     <div>
-                      <h3 className="font-medium text-slate-800">How it will be evaluated</h3>
-                      <ul className="mt-1 list-disc space-y-1 pl-5 text-slate-700">
+                      <h3 className="eyebrow">How it will be evaluated</h3>
+                      <ul className="mt-1 list-disc space-y-1 pl-5 text-fg">
                         {week.evaluationCriteria.map((c) => (
                           <li key={c.name}>
                             <span className="font-medium">{c.name}</span> ({c.maxPoints} pts):{" "}
@@ -146,8 +142,8 @@ export function PlanSection({ projectId, durationWeeks }: { projectId: string; d
 function PlanList({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
-      <h3 className="font-medium text-slate-800">{title}</h3>
-      <ul className="mt-1 list-disc space-y-1 pl-5 text-slate-700">
+      <h3 className="eyebrow">{title}</h3>
+      <ul className="mt-1 list-disc space-y-1 pl-5 text-fg">
         {items.map((item) => (
           <li key={item}>{item}</li>
         ))}

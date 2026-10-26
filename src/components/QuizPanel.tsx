@@ -43,24 +43,24 @@ export function QuizPanel({ projectId, week }: { projectId: string; week: number
   }
 
   return (
-    <div className="mt-3 border-t border-slate-100 pt-3">
+    <div className="mt-4 border-t border-line pt-4">
       {phase.status === "idle" && (
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={start}
-            className="rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-800 hover:bg-indigo-50"
+            className="btn-secondary btn-sm border-primary/40 text-link"
           >
             Week {week} quiz
           </button>
-          <span className="text-xs text-slate-600">
+          <span className="text-xs text-muted">
             {QUIZ_QUESTION_COUNT} multiple-choice questions about your code. One attempt.
           </span>
         </div>
       )}
 
       {phase.status === "loading" && (
-        <p role="status" className="text-xs text-indigo-800">
+        <p role="status" className="text-xs text-link">
           {phase.creating
             ? "Writing your quiz from your code changes… this can take up to a minute."
             : "Loading your quiz…"}
@@ -68,12 +68,12 @@ export function QuizPanel({ projectId, week }: { projectId: string; week: number
       )}
 
       {phase.status === "error" && (
-        <div role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+        <div role="alert" className="alert-danger">
           <p>{phase.message}</p>
           <button
             type="button"
             onClick={start}
-            className="mt-2 rounded-md border border-red-400 px-3 py-1 font-medium hover:bg-red-100"
+            className="btn-secondary btn-sm mt-3"
           >
             Try again
           </button>
@@ -132,23 +132,26 @@ function QuizForm({
 
   return (
     <form onSubmit={submit} className="space-y-4" aria-label={`Week ${week} quiz`}>
-      <p className="text-sm text-slate-700">
+      <p className="text-sm text-fg">
         Answer all {quiz.questions.length} questions. You can submit <strong>once</strong>; the correct answers appear
         afterwards. The quiz helps your teacher see whether you understand the code you pushed.
       </p>
       {quiz.questions.map((q, qi) => (
-        <fieldset key={qi} className="space-y-1.5 rounded-md border border-slate-200 p-3">
-          <legend className="px-1 text-sm font-medium">
+        <fieldset key={qi} className="well space-y-2 p-4">
+          <legend className="px-1 text-sm font-semibold">
             {qi + 1}. {q.question}
           </legend>
           {q.options.map((option, oi) => (
-            <label key={oi} className="flex cursor-pointer items-start gap-2 text-sm">
+            <label
+              key={oi}
+              className="flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 text-sm transition duration-150 hover:bg-card-hover has-[:checked]:bg-primary/15"
+            >
               <input
                 type="radio"
                 name={`q${qi}`}
                 checked={answers[qi] === oi}
                 onChange={() => setAnswers((prev) => prev.map((a, i) => (i === qi ? oi : a)))}
-                className="mt-1"
+                className="mt-1 accent-[var(--color-accent)]"
               />
               <span>
                 <span className="font-medium">{LETTERS[oi]}.</span> {option}
@@ -158,18 +161,18 @@ function QuizForm({
         </fieldset>
       ))}
       {error && (
-        <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+        <p role="alert" className="alert-danger">
           {error}
         </p>
       )}
       <button
         type="submit"
         disabled={!complete || sending}
-        className="rounded-md bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+        className="btn-primary"
       >
         {sending ? "Submitting…" : "Submit my answers"}
       </button>
-      {!complete && <p className="text-xs text-slate-600">Choose one option for every question to submit.</p>}
+      {!complete && <p className="text-xs text-muted">Choose one option for every question to submit.</p>}
     </form>
   );
 }
@@ -178,9 +181,9 @@ function QuizForm({
 export function QuizReview({ quiz }: { quiz: Extract<QuizView, { state: "taken" }> }) {
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium" aria-label={`Quiz result ${quiz.correctCount} out of ${quiz.total}`}>
+      <p className="text-base font-semibold" aria-label={`Quiz result ${quiz.correctCount} out of ${quiz.total}`}>
         Quiz result: {quiz.correctCount}/{quiz.total} correct
-        <span className="font-normal text-slate-600"> · submitted {new Date(quiz.submittedAt).toLocaleString()}</span>
+        <span className="font-normal text-muted"> · submitted {new Date(quiz.submittedAt).toLocaleString()}</span>
       </p>
       <ol className="space-y-3">
         {quiz.questions.map((q, qi) => {
@@ -188,7 +191,7 @@ export function QuizReview({ quiz }: { quiz: Extract<QuizView, { state: "taken" 
           return (
             <li
               key={qi}
-              className={`rounded-md border p-3 text-sm ${right ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50"}`}
+              className={`rounded-xl border border-l-4 p-4 text-sm ${right ? "border-success/30 border-l-success bg-success/10" : "border-warning/30 border-l-warning bg-warning/10"}`}
             >
               <p className="font-medium">
                 {qi + 1}. {q.question}
@@ -207,7 +210,7 @@ export function QuizReview({ quiz }: { quiz: Extract<QuizView, { state: "taken" 
                   </strong>
                 </p>
               )}
-              <p className="mt-1 text-slate-700">{q.explanation}</p>
+              <p className="mt-1 text-fg">{q.explanation}</p>
             </li>
           );
         })}

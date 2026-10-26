@@ -103,7 +103,7 @@ describe("FacultyQueue", () => {
     expect(screen.getByRole("link", { name: /Review/ })).toHaveAttribute("href", `/faculty/evaluations/${week.evaluationId}`);
     const arrow = screen.getByRole("link", { name: "Open the overview of Library app" });
     expect(arrow).toHaveAttribute("href", `/faculty/projects/${PROJECT_A}`);
-    expect(arrow).toHaveTextContent("→");
+    expect(arrow.querySelector("svg")).not.toBeNull(); // the arrow icon; the link's name comes from the hidden text
   });
 
   it("decided weeks say View instead of Review", async () => {

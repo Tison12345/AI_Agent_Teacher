@@ -12,6 +12,7 @@ import {
 import type { Checkpoint, Progress } from "@/lib/schemas/checkpoint";
 import type { StudentResult } from "@/lib/schemas/review";
 import { QuizPanel } from "./QuizPanel";
+import { Icon, ProgressBar, ScoreCard, WeekScoreBars } from "./ui";
 
 type Load =
   | { status: "loading" }
@@ -178,57 +179,65 @@ export function ProgressSection({ projectId, durationWeeks }: { projectId: strin
   }
 
   return (
-    <section aria-labelledby="progress-heading" className="space-y-3">
-      <h2 id="progress-heading" className="text-lg font-semibold">
+    <section aria-labelledby="progress-heading" className="space-y-5">
+      <h2 id="progress-heading" className="text-xl font-semibold">
         Weekly progress
       </h2>
 
       {load.status === "loading" && (
-        <p role="status" className="text-slate-600">
+        <p role="status" className="text-muted">
           Loading progress…
         </p>
       )}
 
       {load.status === "error" && (
-        <div role="alert" className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+        <div role="alert" className="alert-danger">
           <p>Could not load progress: {load.message}</p>
-          <button
-            type="button"
-            onClick={reload}
-            className="mt-2 rounded-md border border-red-400 px-3 py-1 font-medium hover:bg-red-100"
-          >
+          <button type="button" onClick={reload} className="btn-secondary btn-sm mt-3">
             Try again
           </button>
         </div>
       )}
 
       {actionError && (
-        <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+        <p role="alert" className="alert-danger">
           {actionError}
         </p>
       )}
 
       {load.status === "ready" && (
         <>
+          <ProgressSummary
+            durationWeeks={durationWeeks}
+            checkpoints={load.progress.checkpoints.length}
+            evaluations={load.progress.evaluations}
+            results={results}
+          />
           <Baseline
             baseline={load.progress.baseline}
             busy={busy === "baseline"}
             disabled={busy !== null || evaluating !== null}
             onRecord={handleBaseline}
           />
-          <ol className="space-y-2">
+          <ol className="space-y-4">
             {weeks.map((week) => {
               const checkpoint = load.progress.checkpoints.find((c) => c.weekNumber === week);
               const evaluation = load.progress.evaluations.find((e) => e.weekNumber === week);
               const previousDone =
                 week === 1 ? load.progress.baseline !== null : load.progress.checkpoints.some((c) => c.weekNumber === week - 1);
               return (
-                <li key={week} className="rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-medium">Week {week}</span>
+                <li key={week} className="card p-5 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="flex items-center gap-3">
+                      <WeekMarker
+                        state={!checkpoint ? "open" : !evaluation || evaluation.status === "pending_review" ? "waiting" : "done"}
+                        week={week}
+                      />
+                      <span className="text-base font-semibold">Week {week}</span>
+                    </span>
                     {checkpoint ? (
                       <span className="flex flex-wrap items-center gap-2">
-                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900">
+                        <span className={evaluation && evaluation.status !== "pending_review" ? "badge-success" : "badge-info"}>
                           {evaluation
                             ? evaluation.status === "pending_review"
                               ? "Recorded · submitted for teacher review"
@@ -240,7 +249,7 @@ export function ProgressSection({ projectId, durationWeeks }: { projectId: strin
                             type="button"
                             onClick={() => runEvaluation(week)}
                             disabled={busy !== null || evaluating !== null}
-                            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="btn-secondary btn-sm"
                           >
                             Generate evaluation
                           </button>
@@ -252,13 +261,13 @@ export function ProgressSection({ projectId, durationWeeks }: { projectId: strin
                           type="button"
                           onClick={() => setConfirmWeek(week)}
                           disabled={busy !== null || evaluating !== null}
-                          className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="btn-primary btn-sm"
                         >
                           {busy === week ? "Recording…" : `Complete Week ${week}`}
                         </button>
                       )
                     ) : (
-                      <span className="text-xs text-slate-500">
+                      <span className="badge-neutral">
                         {week === 1 ? "Record your starting point first" : `Complete Week ${week - 1} first`}
                       </span>
                     )}
@@ -270,14 +279,14 @@ export function ProgressSection({ projectId, durationWeeks }: { projectId: strin
                     <OfficialResult result={results.find((r) => r.weekNumber === week)} state={resultsState} />
                   )}
                   {evaluating === week && (
-                    <p role="status" className="mt-2 text-xs text-indigo-800">
+                    <p role="status" className="mt-2 text-xs text-link">
                       Evaluating your code changes… this can take up to a minute.
                     </p>
                   )}
 
                   {confirmWeek === week && !checkpoint && (
-                    <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3" role="group" aria-label={`Confirm Week ${week}`}>
-                      <p className="text-amber-950">
+                    <div className="alert-warning mt-3" role="group" aria-label={`Confirm Week ${week}`}>
+                      <p className="text-fg">
                         Record Week {week} now? We will save the latest commit you have pushed to GitHub. Push all your
                         work first. This cannot be undone.
                       </p>
@@ -285,14 +294,14 @@ export function ProgressSection({ projectId, durationWeeks }: { projectId: strin
                         <button
                           type="button"
                           onClick={() => handleComplete(week)}
-                          className="rounded-md bg-indigo-700 px-3 py-1.5 font-medium text-white hover:bg-indigo-800"
+                          className="btn-primary btn-sm"
                         >
                           Yes, record Week {week}
                         </button>
                         <button
                           type="button"
                           onClick={() => setConfirmWeek(null)}
-                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+                          className="btn-secondary btn-sm"
                         >
                           Cancel
                         </button>
@@ -303,7 +312,7 @@ export function ProgressSection({ projectId, durationWeeks }: { projectId: strin
               );
             })}
           </ol>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted">
             A recorded checkpoint only saves the commit you finished the week on. After recording, your code changes are
             reviewed by an AI and sent to your teacher. The AI&apos;s suggestion is not a mark, and you will not see it:
             marks appear only after your teacher reviews and approves them.
@@ -311,6 +320,94 @@ export function ProgressSection({ projectId, durationWeeks }: { projectId: strin
         </>
       )}
     </section>
+  );
+}
+
+/** The marker beside a week: done, waiting for the teacher, or not started. The state is also text. */
+function WeekMarker({ state, week }: { state: "done" | "waiting" | "open"; week: number }) {
+  if (state === "done") {
+    return (
+      <span className="grid h-9 w-9 place-items-center rounded-full bg-success/15 text-success ring-1 ring-success/40">
+        <Icon name="check" className="h-5 w-5" />
+        <span className="sr-only">Week {week} reviewed</span>
+      </span>
+    );
+  }
+  if (state === "waiting") {
+    return (
+      <span className="grid h-9 w-9 place-items-center rounded-full bg-accent/10 text-accent ring-1 ring-accent/40">
+        <Icon name="clock" className="h-5 w-5" />
+        <span className="sr-only">Week {week} waiting for review</span>
+      </span>
+    );
+  }
+  return (
+    <span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-full bg-canvas text-sm font-semibold text-muted ring-1 ring-line">
+      {week}
+    </span>
+  );
+}
+
+/**
+ * The big picture: the average of the teacher-approved scores so far (a plain average of
+ * real official scores, not a final grade), how far the project has got, and each week's score.
+ */
+function ProgressSummary({
+  durationWeeks,
+  checkpoints,
+  evaluations,
+  results,
+}: {
+  durationWeeks: number;
+  checkpoints: number;
+  evaluations: { weekNumber: number; status: EvaluationStatus }[];
+  results: StudentResult[];
+}) {
+  const scored = results.filter((r) => r.officialScore !== null);
+  const average =
+    scored.length === 0
+      ? null
+      : Math.round((scored.reduce((sum, r) => sum + (r.officialScore ?? 0), 0) / scored.length) * 10) / 10;
+  const reviewed = evaluations.filter((e) => e.status !== "pending_review").length;
+  const waiting = evaluations.length - reviewed;
+  const bars = Array.from({ length: durationWeeks }, (_, i) => ({
+    weekNumber: i + 1,
+    score: results.find((r) => r.weekNumber === i + 1)?.officialScore ?? null,
+  }));
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-3">
+      <div className="lg:col-span-2">
+        <ScoreCard
+          hero
+          label="Average official result"
+          score={average}
+          empty="No reviewed weeks yet"
+          caption={
+            average === null
+              ? "Results appear here after your teacher reviews a week."
+              : `Average of ${scored.length} teacher-approved ${scored.length === 1 ? "week" : "weeks"} out of ${durationWeeks}. This is not a final grade.`
+          }
+        >
+          <WeekScoreBars weeks={bars} />
+        </ScoreCard>
+      </div>
+      <section aria-label="Project progress" className="card flex flex-col justify-between gap-5 p-6">
+        <div>
+          <p className="eyebrow">Weeks recorded</p>
+          <p className="mt-2 flex items-baseline gap-2">
+            <span className="text-5xl font-bold tabular-nums tracking-tight">{checkpoints}</span>
+            <span className="text-xl font-medium text-muted">of {durationWeeks}</span>
+          </p>
+        </div>
+        <ProgressBar percent={(checkpoints / durationWeeks) * 100} label="Weeks recorded as a percentage of the project" />
+        <p className="flex flex-wrap gap-2">
+          <span className="badge-success">{reviewed} reviewed</span>
+          <span className="badge-info">{waiting} waiting for review</span>
+          <span className="badge-neutral">{durationWeeks - checkpoints} not recorded</span>
+        </p>
+      </section>
+    </div>
   );
 }
 
@@ -327,16 +424,16 @@ function Baseline({
 }) {
   if (baseline) {
     return (
-      <p className="rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm">
-        <span className="font-medium">Starting point:</span> commit{" "}
-        <code className="rounded bg-slate-100 px-1">{short(baseline.commitSha)}</code> on {baseline.branch}, recorded{" "}
+      <p className="card flex flex-wrap items-center gap-x-2 gap-y-1 px-5 py-4 text-sm">
+        <span className="font-semibold">Starting point:</span> commit{" "}
+        <code className="rounded-lg bg-canvas/70 px-1">{short(baseline.commitSha)}</code> on {baseline.branch}, recorded{" "}
         {new Date(baseline.recordedAt).toLocaleString()}.
       </p>
     );
   }
   return (
-    <div className="space-y-2 rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm">
-      <p className="text-slate-700">
+    <div className="card space-y-3 border-dashed p-5 text-sm">
+      <p className="text-fg">
         Before Week 1, record your starting point. We save the latest commit on your repository&apos;s default branch.
         Week 1 is compared against it, so do this before you start your project work. It cannot be changed later.
       </p>
@@ -344,7 +441,7 @@ function Baseline({
         type="button"
         onClick={onRecord}
         disabled={disabled}
-        className="rounded-md bg-indigo-700 px-4 py-2 font-medium text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+        className="btn-primary"
       >
         {busy ? "Recording…" : "Record starting point"}
       </button>
@@ -354,11 +451,11 @@ function Baseline({
 
 function CheckpointDetails({ checkpoint }: { checkpoint: Checkpoint }) {
   return (
-    <p className="mt-2 text-xs text-slate-600">
+    <p className="mt-2 text-xs text-muted">
       Recorded {new Date(checkpoint.recordedAt).toLocaleString()} · commit{" "}
-      <code className="rounded bg-slate-100 px-1">{short(checkpoint.commitSha)}</code> · {checkpoint.filesChanged}{" "}
+      <code className="rounded-lg bg-canvas/70 px-1">{short(checkpoint.commitSha)}</code> · {checkpoint.filesChanged}{" "}
       {checkpoint.filesChanged === 1 ? "file" : "files"} changed (+{checkpoint.additions} −{checkpoint.deletions}) since{" "}
-      <code className="rounded bg-slate-100 px-1">{short(checkpoint.baseCommitSha)}</code>
+      <code className="rounded-lg bg-canvas/70 px-1">{short(checkpoint.baseCommitSha)}</code>
     </p>
   );
 }
@@ -373,32 +470,32 @@ function OfficialResult({
 }) {
   if (!result) {
     return state !== "loading" ? (
-      <p role="alert" className="mt-2 text-xs text-red-800">
+      <p role="alert" className="mt-2 text-xs text-danger">
         Your teacher has reviewed this week, but the result could not be loaded. Please refresh the page.
       </p>
     ) : (
-      <p role="status" className="mt-2 text-xs text-slate-600">
+      <p role="status" className="mt-2 text-xs text-muted">
         Loading your teacher&apos;s result…
       </p>
     );
   }
   if (result.outcome === "rejected") {
     return (
-      <p className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">
+      <p className="well mt-3 p-4 text-sm text-fg">
         Your teacher reviewed this week and did not give an official mark for it.
       </p>
     );
   }
   return (
-    <div className="mt-3 space-y-1 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm">
-      <p className="font-medium text-emerald-950">
+    <div className="alert-success mt-3 space-y-2">
+      <p className="text-xl font-bold text-fg">
         Official result: {result.officialScore}/100
-        <span className="font-normal text-emerald-900"> · set by your teacher</span>
+        <span className="text-sm font-medium text-success"> · set by your teacher</span>
       </p>
       {result.feedback && (
         <div>
-          <p className="font-medium text-emerald-950">Teacher feedback</p>
-          <p className="whitespace-pre-line text-slate-800">{result.feedback}</p>
+          <p className="font-semibold text-fg">Teacher feedback</p>
+          <p className="whitespace-pre-line text-fg">{result.feedback}</p>
         </div>
       )}
     </div>

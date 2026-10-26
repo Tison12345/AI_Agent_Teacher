@@ -18,8 +18,7 @@ const emptyValues: Record<ProjectFormField, string> = {
   durationWeeks: String(DEFAULT_DURATION_WEEKS),
 };
 
-const inputClass =
-  "mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-200 aria-[invalid=true]:border-red-600";
+const inputClass = "field mt-1 block aria-[invalid=true]:border-danger";
 
 type ControlProps = {
   id: string;
@@ -43,7 +42,7 @@ function Field({ id, label, error, hint, children }: FieldProps) {
     undefined;
   return (
     <div>
-      <label htmlFor={id} className="block text-sm font-medium text-slate-800">
+      <label htmlFor={id} className="block text-sm font-medium text-fg">
         {label}
       </label>
       {children({
@@ -52,12 +51,12 @@ function Field({ id, label, error, hint, children }: FieldProps) {
         "aria-describedby": describedBy,
       })}
       {hint && (
-        <p id={hintId} className="mt-1 text-xs text-slate-500">
+        <p id={hintId} className="mt-1 text-xs text-muted">
           {hint}
         </p>
       )}
       {error && (
-        <p id={errorId} role="alert" className="mt-1 text-sm text-red-700">
+        <p id={errorId} role="alert" className="mt-1 text-sm text-danger">
           {error}
         </p>
       )}
@@ -124,7 +123,7 @@ export function ProjectForm({ onSubmit }: ProjectFormProps) {
       onSubmit={handleSubmit}
       noValidate
       aria-label="Create project"
-      className="space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+      className="space-y-5 rounded-2xl border border-line bg-card p-6 shadow-lg shadow-black/20"
     >
       <Field id="title" label="Project title" error={errors.title}>
         {(a11y) => (
@@ -201,14 +200,14 @@ export function ProjectForm({ onSubmit }: ProjectFormProps) {
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="btn-primary px-4 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting ? "Creating…" : "Create project"}
         </button>
         <button
           type="button"
           onClick={handleReset}
-          className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-fg hover:bg-card-hover"
         >
           Reset
         </button>
@@ -217,7 +216,7 @@ export function ProjectForm({ onSubmit }: ProjectFormProps) {
       {serverError && (
         <div
           role="alert"
-          className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900"
+          className="rounded-2xl border border-danger/40 bg-danger/10 p-4 text-sm text-fg"
         >
           {serverError}
         </div>
@@ -226,7 +225,7 @@ export function ProjectForm({ onSubmit }: ProjectFormProps) {
       {created && (
         <div
           role="status"
-          className="rounded-md border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900"
+          className="rounded-2xl border border-success/40 bg-success/10 p-4 text-sm text-success"
         >
           <p className="font-medium">
             Project created: &ldquo;{created}&rdquo;
