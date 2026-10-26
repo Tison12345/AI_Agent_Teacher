@@ -5,7 +5,7 @@ import type { ReviewDetail } from "@/lib/schemas/review";
 import type { TeacherDecision } from "@/lib/schemas/teacher-decision";
 import { reviewWorld } from "@/test/review-fixtures";
 
-const api = vi.hoisted(() => ({ fetchReview: vi.fn(), sendDecision: vi.fn() }));
+const api = vi.hoisted(() => ({ fetchReview: vi.fn(), sendDecision: vi.fn(), fetchReviewQuiz: vi.fn() }));
 vi.mock("@/lib/api/client", () => api);
 
 import { EvaluationReview } from "./EvaluationReview";
@@ -29,6 +29,7 @@ beforeEach(async () => {
   const { evaluation } = await world.seed(2);
   detail = (await world.review.store.getDetail(evaluation.id))!;
   api.fetchReview.mockResolvedValue(detail);
+  api.fetchReviewQuiz.mockResolvedValue(null);
 });
 
 async function open() {

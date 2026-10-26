@@ -6,7 +6,7 @@ import { RepositoryError } from "@/lib/projects/repository";
 import { EVALUATION_STATUSES } from "@/lib/schemas/evaluation";
 import { StudentResultSchema, type StudentResult } from "@/lib/schemas/review";
 import { TeacherDecisionSchema, type TeacherDecision } from "@/lib/schemas/teacher-decision";
-import { ReviewError, type ReviewStore } from "./service";
+import { quizSummary, ReviewError, type ReviewStore } from "./service";
 
 const QUEUE_LIMIT = 200;
 const DECISION_COLUMNS = "id, evaluation_id, decision, approved_score, approved_feedback, comment, decided_at";
@@ -51,7 +51,7 @@ export const reviewStore: ReviewStore = {
     const db = getSupabase();
     let query = db
       .from("evaluations")
-      .select("id, project_id, week_number, status, suggested_score, created_at, confidence:result->confidence")
+      .select("id, project_id, checkpoint_id, week_number, status, suggested_score, created_at, confidence:result->confidence")
       .limit(QUEUE_LIMIT);
     if (status !== "all") query = query.eq("status", status);
     // Oldest first for the work queue; newest first for the history.
@@ -63,6 +63,7 @@ export const reviewStore: ReviewStore = {
         z.object({
           id: z.string(),
           project_id: z.string(),
+          checkpoint_id: z.string(),
           week_number: z.number(),
           status: z.enum(EVALUATION_STATUSES),
           suggested_score: z.union([z.number(), z.string()]).transform(Number),
@@ -90,6 +91,22 @@ export const reviewStore: ReviewStore = {
       }
     }
 
+    // The student's quiz for each week, as a summary only (no questions or answers).
+    const quizzes = await db.from("quizzes").select("id, checkpoint_id").in("checkpoint_id", rows.map((r) => r.checkpoint_id));
+    if (quizzes.error) fail(quizzes.error);
+    const quizByCheckpoint = new Map((quizzes.data ?? []).map((q) => [String(q.checkpoint_id), String(q.id)]));
+    const attemptByQuiz = new Map<string, { correctCount: number; total: number }>();
+    if (quizByCheckpoint.size > 0) {
+      const attempts = await db
+        .from("quiz_attempts")
+        .select("quiz_id, correct_count, total")
+        .in("quiz_id", [...quizByCheckpoint.values()]);
+      if (attempts.error) fail(attempts.error);
+      for (const a of attempts.data ?? []) {
+        attemptByQuiz.set(String(a.quiz_id), { correctCount: Number(a.correct_count), total: Number(a.total) });
+      }
+    }
+
     return rows.map((r) => ({
       evaluationId: r.id,
       projectId: r.project_id,
@@ -99,6 +116,7 @@ export const reviewStore: ReviewStore = {
       suggestedScore: r.suggested_score,
       officialScore: official.get(r.id) ?? null,
       confidence: r.confidence.level,
+      quiz: quizSummary(quizByCheckpoint.has(r.checkpoint_id), attemptByQuiz.get(quizByCheckpoint.get(r.checkpoint_id) ?? "") ?? null),
       createdAt: r.created_at,
     }));
   },

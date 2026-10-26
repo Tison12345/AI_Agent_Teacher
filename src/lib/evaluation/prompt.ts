@@ -43,7 +43,7 @@ Other fields:
 
 Write in simple, clear English that a college student can understand. Respond with JSON only.`;
 
-const NOTE: Record<(typeof NOT_REVIEWED_REASONS)[number], string> = {
+export const NOTE: Record<(typeof NOT_REVIEWED_REASONS)[number], string> = {
   deleted: "File was deleted. Its contents are not provided.",
   ignored: "Dependency, build output or generated file. Its contents are not provided.",
   binary: "Binary file. Its contents are not provided.",

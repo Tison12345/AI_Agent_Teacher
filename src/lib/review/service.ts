@@ -2,6 +2,7 @@ import type { EVALUATION_STATUSES } from "@/lib/schemas/evaluation";
 import type {
   DecisionRequest,
   QueueItem,
+  QuizSummary,
   ReviewDetail,
   StudentResult,
 } from "@/lib/schemas/review";
@@ -44,6 +45,12 @@ export type ReviewStore = {
   /** Student-safe: only decided weeks, and only what the teacher made official. */
   listResults(projectId: string): Promise<StudentResult[]>;
 };
+
+/** The quiz state for one queue row: no quiz, a quiz nobody has taken, or the student's score. */
+export function quizSummary(hasQuiz: boolean, attempt: { correctCount: number; total: number } | null): QuizSummary {
+  if (attempt) return { status: "taken", correctCount: attempt.correctCount, total: attempt.total };
+  return { status: hasQuiz ? "not_taken" : "not_created", correctCount: null, total: null };
+}
 
 /** The AI's next-week feedback as the text a student would read once a teacher approves it. */
 export function aiFeedbackText(items: string[]): string {

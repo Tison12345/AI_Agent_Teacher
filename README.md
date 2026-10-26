@@ -21,6 +21,8 @@ Students submit a project with a GitHub repository. Gemini turns it into a weekl
 5. **Teacher** opens `/faculty`, reviews the AI recommendation, evidence and diff, then **approves** (AI's score and feedback), **edits** (own score and feedback) or **rejects** (no score). Decisions are final.
 6. **Student** sees the official score and feedback on the project page and the student dashboard. Never the AI's score, the AI's own feedback, or the teacher's private comment.
 
+**Weekly quiz (optional for the student).** After recording a week, the student can open that week's quiz: 5 multiple-choice questions that Gemini writes from the week's tasks and the same code changes. It is created once per week and cannot be regenerated, so a student cannot keep asking until the questions suit them. The server shuffles the options, keeps the correct answers, and grades the **one** attempt; the browser never receives correct answers or explanations until the attempt has been submitted. The teacher sees the result next to the AI recommendation, on the review page, as **separate evidence of understanding**. The quiz does not change the AI's score or the official mark.
+
 ## Setup
 
 Requirements: Node.js 20.9 or newer (developed on 24), a Supabase project, a Gemini API key.
@@ -54,6 +56,7 @@ Run the files in `supabase/migrations/` **in order**, once each, in the Supabase
 | `0004_evaluations.sql` | `evaluations` (one per checkpoint; AI output immutable) |
 | `0005_teacher_decisions.sql` | `teacher_decisions`, `decide_evaluation()` (atomic, final) |
 | `0006_variable_duration.sql` | Project length 1 to 16 weeks (replaces the fixed 12) |
+| `0007_quizzes.sql` | `quizzes` (one per checkpoint), `quiz_attempts` (one per quiz); both immutable |
 
 All tables have row-level security enabled with no access for `anon`/`authenticated`; only the server's secret key can read or write.
 
@@ -88,7 +91,9 @@ Live tests are in `*.live.test.ts` and are excluded from `npm test`. Each create
 | `GET /api/projects/[id]/repo`, `/repo/compare` | Students | GitHub reads |
 | `POST …/baseline`, `POST …/weeks/[week]/complete`, `GET …/progress` | Students | Progress returns statuses only, never scores |
 | `POST …/weeks/[week]/evaluate` | Students | Returns status only; calls GitHub and Gemini |
+| `GET/POST …/weeks/[week]/quiz`, `POST …/weeks/[week]/quiz/attempt` | Students | GET: the quiz without answers. POST: creates it once (calls GitHub and Gemini). `attempt`: graded on the server, one attempt |
 | `GET /api/projects/[id]/results` | Students | Official results only |
+| `GET /api/faculty/evaluations/[id]/quiz` | Teachers | The student's quiz result for that week; answers withheld until the student has attempted it |
 | `GET /api/faculty/evaluations[?status=…]`, `GET …/[id]`, `POST …/[id]/decision` | Teachers | Carry the AI score and the diff |
 | `GET …/weeks/[week]/evaluation` | Teachers | Full AI evaluation; superseded by the faculty routes |
 
@@ -108,13 +113,15 @@ Live tests are in `*.live.test.ts` and are excluded from `npm test`. Each create
 6. **Force-push.** If a student rewrites history before the evaluation is generated, the commit may vanish and the evaluation fails with a clear message. Evaluate right after recording.
 7. **Duplicate calls.** Simultaneous requests can each spend one Gemini call; only one result is ever stored.
 8. **Duration is chosen once.** A project's length (1 to 16 weeks) cannot be changed after it is created, and each project has one plan with no regeneration.
-9. **Not checked:** the app has not been deployed or load-tested, and the pages have not been audited with browser accessibility tooling (see the final report for what was and was not checked).
+9. **The quiz is only as good as the questions.** Gemini writes them from changed lines it can see, and has not run the code. There is no check that a question is actually answerable from the diff beyond the format rules, no way for a teacher to edit or remove a question, and one attempt means a student who closes the page mid-quiz cannot continue it. A week with no readable code (only images, generated or deleted files) gets no quiz. Without login, anyone with the project link can take or submit a student's quiz.
+10. **Not checked:** the app has not been deployed or load-tested, and the pages have not been audited with browser accessibility tooling (see the final report for what was and was not checked).
 
 ## Deployment notes
 
 - Any Node host for Next.js 16 works (e.g. Vercel). Set the four server variables in the host's environment settings, not in the repository.
 - Plan generation and evaluation can take up to ~60 seconds (`maxDuration = 60` on those routes). Choose a plan that allows functions that long.
-- Run all six migrations on the production Supabase project before first use.
+- Run all seven migrations on the production Supabase project before first use.
+- Quiz creation takes up to ~60 seconds like evaluation (`maxDuration = 60`), and uses one more Gemini call per week.
 - **Do not expose a deployment publicly until authentication exists** (limitation 1).
 - Rotate any key that has ever been pasted into a chat, ticket or commit.
 - Use a read-only GitHub token scoped to the repositories you need.

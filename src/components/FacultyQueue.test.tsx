@@ -17,6 +17,7 @@ const item = (over: Partial<QueueItem> = {}): QueueItem => ({
   suggestedScore: 71.5,
   officialScore: null,
   confidence: "medium",
+  quiz: { status: "not_created", correctCount: null, total: null },
   createdAt: "2026-10-26T10:00:00+00:00",
   ...over,
 });
@@ -51,6 +52,23 @@ describe("FacultyQueue", () => {
     expect(screen.getByRole("link", { name: /View/ })).toBeInTheDocument();
     expect(api.fetchQueue).toHaveBeenLastCalledWith("approved");
     expect(screen.getByRole("button", { name: "Approved" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows each student's quiz result next to the row, apart from the AI's score", async () => {
+    api.fetchQueue.mockResolvedValue([
+      item({ evaluationId: "00000000-0000-4000-9000-000000000001", projectTitle: "Taken project", quiz: { status: "taken", correctCount: 1, total: 5 } }),
+      item({ evaluationId: "00000000-0000-4000-9000-000000000002", projectTitle: "Open project", quiz: { status: "not_taken", correctCount: null, total: null } }),
+      item({ evaluationId: "00000000-0000-4000-9000-000000000003", projectTitle: "No quiz project" }),
+    ]);
+    render(<FacultyQueue />);
+    await screen.findByText("Taken project · Week 2");
+    const rows = screen.getAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent("Student quiz: 1/5 correct");
+    expect(rows[1]).toHaveTextContent("Student quiz: created, not taken yet");
+    expect(rows[2]).toHaveTextContent("Student quiz: not started");
+    // The AI's number is still labelled as not official, and the quiz is not folded into it.
+    expect(rows[0]).toHaveTextContent("AI suggestion (not official): 71.5/100");
+    expect(rows[0]).not.toHaveTextContent("Official score");
   });
 
   it("says when nothing is waiting", async () => {

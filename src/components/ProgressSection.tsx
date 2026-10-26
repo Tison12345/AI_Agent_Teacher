@@ -11,6 +11,7 @@ import {
 } from "@/lib/api/client";
 import type { Checkpoint, Progress } from "@/lib/schemas/checkpoint";
 import type { StudentResult } from "@/lib/schemas/review";
+import { QuizPanel } from "./QuizPanel";
 
 type Load =
   | { status: "loading" }
@@ -264,6 +265,7 @@ export function ProgressSection({ projectId, durationWeeks }: { projectId: strin
                   </div>
 
                   {checkpoint && <CheckpointDetails checkpoint={checkpoint} />}
+                  {checkpoint && <QuizPanel projectId={projectId} week={week} />}
                   {evaluation && evaluation.status !== "pending_review" && (
                     <OfficialResult result={results.find((r) => r.weekNumber === week)} state={resultsState} />
                   )}

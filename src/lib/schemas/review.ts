@@ -37,6 +37,13 @@ export const DecisionRequestSchema = z.discriminatedUnion("decision", [
 
 export type DecisionRequest = z.infer<typeof DecisionRequestSchema>;
 
+/** The week's quiz at a glance, for the faculty queue. The score is the student's own result, separate from the AI's. */
+export const QuizSummarySchema = z.object({
+  status: z.enum(["not_created", "not_taken", "taken"]),
+  correctCount: z.number().int().min(0).nullable(),
+  total: z.number().int().positive().nullable(),
+});
+
 /** One row of the faculty queue. Teachers only: it carries the AI's suggestion. */
 export const QueueItemSchema = z.object({
   evaluationId: z.uuid(),
@@ -48,6 +55,7 @@ export const QueueItemSchema = z.object({
   /** The teacher's official score; null while waiting for review, and for a rejection. */
   officialScore: z.number().nullable(),
   confidence: z.enum(["low", "medium", "high"]),
+  quiz: QuizSummarySchema,
   createdAt: z.iso.datetime({ offset: true }),
 });
 
@@ -71,6 +79,7 @@ export const StudentResultSchema = z.object({
   decidedAt: z.iso.datetime({ offset: true }),
 });
 
+export type QuizSummary = z.infer<typeof QuizSummarySchema>;
 export type QueueItem = z.infer<typeof QueueItemSchema>;
 export type ReviewDetail = z.infer<typeof ReviewDetailSchema>;
 export type StudentResult = z.infer<typeof StudentResultSchema>;

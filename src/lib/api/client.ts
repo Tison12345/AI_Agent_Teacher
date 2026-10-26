@@ -9,6 +9,7 @@ import {
   type Checkpoint,
   type Progress,
 } from "@/lib/schemas/checkpoint";
+import { QuizViewSchema, type QuizView } from "@/lib/schemas/quiz";
 import { RepoInfoSchema, type RepoInfo } from "@/lib/schemas/repo-info";
 import {
   QueueItemSchema,
@@ -167,6 +168,53 @@ export async function requestEvaluation(
   return parsed.success
     ? { ok: false, message: parsed.data.error.message, status: parsed.data.status ?? undefined }
     : { ok: false, message: `Request failed (${res.status}).` };
+}
+
+export type QuizResult = { ok: true; quiz: QuizView } | { ok: false; message: string; code?: string };
+
+const QuizBodySchema = z.object({ quiz: QuizViewSchema });
+
+async function readQuizResult(res: Response): Promise<QuizResult> {
+  if (res.ok) return { ok: true, quiz: QuizBodySchema.parse(await res.json()).quiz };
+  const parsed = z
+    .object({ error: z.object({ code: z.string().optional(), message: z.string() }) })
+    .safeParse(await res.json().catch(() => null));
+  return parsed.success
+    ? { ok: false, message: parsed.data.error.message, code: parsed.data.error.code }
+    : { ok: false, message: `Request failed (${res.status}).` };
+}
+
+const quizUrl = (projectId: string, week: number) =>
+  `/api/projects/${encodeURIComponent(projectId)}/weeks/${week}/quiz`;
+
+/** The week's quiz without any correct answers (until the attempt is made), or null if there is none yet. */
+export async function fetchQuiz(projectId: string, week: number): Promise<QuizView | null> {
+  const res = await fetch(quizUrl(projectId, week), { cache: "no-store" });
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ quiz: QuizViewSchema.nullable() }).parse(await res.json()).quiz;
+}
+
+/** Creates the week's quiz (once). Can take up to a minute. */
+export async function createQuiz(projectId: string, week: number): Promise<QuizResult> {
+  return readQuizResult(await fetch(quizUrl(projectId, week), { method: "POST" }));
+}
+
+/** Sends the one attempt. The server grades it and replies with the review. */
+export async function submitQuiz(projectId: string, week: number, answers: number[]): Promise<QuizResult> {
+  return readQuizResult(
+    await fetch(`${quizUrl(projectId, week)}/attempt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers }),
+    }),
+  );
+}
+
+/** Faculty: the student's quiz result for the week an evaluation covers, or null. */
+export async function fetchReviewQuiz(evaluationId: string): Promise<QuizView | null> {
+  const res = await fetch(`/api/faculty/evaluations/${encodeURIComponent(evaluationId)}/quiz`, { cache: "no-store" });
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ quiz: QuizViewSchema.nullable() }).parse(await res.json()).quiz;
 }
 
 export async function createProject(

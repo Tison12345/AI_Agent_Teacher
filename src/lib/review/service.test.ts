@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { DecisionRequestSchema } from "@/lib/schemas/review";
 import { reviewWorld } from "@/test/review-fixtures";
-import { aiFeedbackText, ReviewError, submitDecision } from "./service";
+import { aiFeedbackText, quizSummary, ReviewError, submitDecision } from "./service";
 
 const parse = (body: unknown) => DecisionRequestSchema.parse(body);
+
+describe("quizSummary", () => {
+  it("is not_created without a quiz, not_taken with one nobody has attempted, and the score once taken", () => {
+    expect(quizSummary(false, null)).toEqual({ status: "not_created", correctCount: null, total: null });
+    expect(quizSummary(true, null)).toEqual({ status: "not_taken", correctCount: null, total: null });
+    expect(quizSummary(true, { correctCount: 0, total: 5 })).toEqual({ status: "taken", correctCount: 0, total: 5 });
+  });
+});
 
 describe("submitDecision", () => {
   it("approve copies the AI's score and feedback exactly and marks the evaluation approved", async () => {

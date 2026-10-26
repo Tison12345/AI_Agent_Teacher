@@ -6,6 +6,7 @@ import { fetchReview, sendDecision } from "@/lib/api/client";
 import { aiFeedbackText } from "@/lib/review/service";
 import { DecisionRequestSchema, type ReviewDetail } from "@/lib/schemas/review";
 import type { TeacherDecision } from "@/lib/schemas/teacher-decision";
+import { FacultyQuiz } from "./FacultyQuiz";
 
 type Load =
   | { status: "loading" }
@@ -153,7 +154,9 @@ function Detail({ detail, onDecided }: { detail: ReviewDetail; onDecided: (d: Te
         <TextList title="AI's feedback for next week" items={e.feedbackForNextWeek} />
       </section>
 
-      <section aria-labelledby="scope-heading" className="space-y-2 rounded-lg border border-slate-200 bg-white p-4 text-sm">
+      <FacultyQuiz evaluationId={e.id} />
+
+      <section aria-labelledby="scope-heading"className="space-y-2 rounded-lg border border-slate-200 bg-white p-4 text-sm">
         <h2 id="scope-heading" className="text-lg font-semibold">
           What the AI could see
         </h2>

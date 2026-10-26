@@ -69,7 +69,7 @@ export type EvaluationDeps = {
   gemini: { client: GeminiClient; model: string };
 };
 
-function toSnapshot(diff: CompareResult): Snapshot {
+export function toSnapshot(diff: CompareResult): Snapshot {
   return {
     baseSha: diff.baseSha,
     headSha: diff.headSha,

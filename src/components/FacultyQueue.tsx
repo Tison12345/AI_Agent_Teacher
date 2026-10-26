@@ -20,6 +20,12 @@ const STATUS_LABEL: Record<QueueItem["status"], string> = {
   rejected: "Rejected",
 };
 
+/** The student's own quiz result: separate from the AI's score and never part of the official mark. */
+function quizLabel(quiz: QueueItem["quiz"]): string {
+  if (quiz.status === "taken") return `Student quiz: ${quiz.correctCount}/${quiz.total} correct`;
+  return quiz.status === "not_taken" ? "Student quiz: created, not taken yet" : "Student quiz: not started";
+}
+
 type Load = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; items: QueueItem[] };
 
 export function FacultyQueue() {
@@ -123,6 +129,7 @@ export function FacultyQueue() {
                     {item.officialScore === null ? "No official score" : `Official score: ${item.officialScore}/100`}
                   </p>
                 )}
+                <p className="text-xs text-slate-700">{quizLabel(item.quiz)}</p>
               </div>
               <div className="flex items-center gap-3">
                 <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-800">

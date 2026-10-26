@@ -7,6 +7,8 @@ import { GitHubError } from "@/lib/github/errors";
 import { memoryStore } from "@/test/memory-checkpoint-store";
 import { memoryEvaluationStore } from "@/test/memory-evaluation-store";
 import { memoryReviewStore } from "@/test/memory-review-store";
+import { memoryQuizStore } from "@/test/memory-quiz-store";
+import { modelQuiz } from "@/lib/quiz/fixtures";
 import type { Project } from "@/lib/schemas/project";
 import type { StoredPlan, WeeklyPlanItem } from "@/lib/schemas/weekly-plan";
 
@@ -23,6 +25,7 @@ const state = vi.hoisted(() => ({
   checkpoints: undefined as unknown,
   evaluations: undefined as unknown,
   review: undefined as unknown,
+  quizzes: undefined as unknown,
 }));
 
 vi.mock("@/lib/db/supabase", () => ({ StorageConfigError: class extends Error {} }));
@@ -63,9 +66,15 @@ vi.mock("@/lib/evaluation/repository", async () => {
   state.evaluations = memoryEvaluationStore();
   return { evaluationStore: (state.evaluations as ReturnType<typeof memoryEvaluationStore>).store };
 });
+vi.mock("@/lib/quiz/repository", async () => {
+  state.quizzes = memoryQuizStore();
+  return { quizStore: (state.quizzes as ReturnType<typeof memoryQuizStore>).store };
+});
 vi.mock("@/lib/review/repository", async () => {
   const world = state.evaluations as ReturnType<typeof memoryEvaluationStore>;
-  state.review = memoryReviewStore(world.rows, []);
+  // Make sure the quiz store exists first: the queue shows each week's quiz summary.
+  await import("@/lib/quiz/repository");
+  state.review = memoryReviewStore(world.rows, [], state.quizzes as ReturnType<typeof memoryQuizStore>);
   return { reviewStore: (state.review as ReturnType<typeof memoryReviewStore>).store };
 });
 vi.mock("@/lib/gemini/client", () => ({
@@ -123,6 +132,9 @@ import { GET as getResults } from "@/app/api/projects/[id]/results/route";
 import { GET as getQueue } from "@/app/api/faculty/evaluations/route";
 import { GET as getReview } from "@/app/api/faculty/evaluations/[id]/route";
 import { POST as decide } from "@/app/api/faculty/evaluations/[id]/decision/route";
+import { GET as getQuiz, POST as createQuiz } from "@/app/api/projects/[id]/weeks/[week]/quiz/route";
+import { POST as attemptQuiz } from "@/app/api/projects/[id]/weeks/[week]/quiz/attempt/route";
+import { GET as getReviewQuiz } from "@/app/api/faculty/evaluations/[id]/quiz/route";
 
 const week = (n: number): WeeklyPlanItem => ({
   weekNumber: n,
@@ -201,6 +213,9 @@ beforeEach(() => {
   checkpoints.baselines.clear();
   (state.evaluations as ReturnType<typeof memoryEvaluationStore>).rows.length = 0;
   (state.review as ReturnType<typeof memoryReviewStore>).decisions.length = 0;
+  const quizzes = state.quizzes as ReturnType<typeof memoryQuizStore>;
+  quizzes.quizzes.length = 0;
+  quizzes.attempts.length = 0;
 });
 
 describe("student to teacher workflow", () => {
@@ -257,6 +272,48 @@ describe("student to teacher workflow", () => {
     expect((await body(await getQueue(req()))).evaluations).toEqual([]);
     const history = (await body(await getQueue(new Request("http://localhost/api/faculty/evaluations?status=edited")))).evaluations;
     expect(history[0]).toMatchObject({ suggestedScore: 80, officialScore: 65, status: "edited" });
+  });
+
+  it("weekly quiz: made from the recorded week, answers withheld until the one attempt, shown to the teacher as separate evidence", async () => {
+    const id = await startProject();
+    await submitWeek(id, 1, sha("1"));
+    state.geminiScript.push(evaluation());
+    expect((await evaluate(req(json()), weekCtx(id, 1))).status).toBe(201);
+
+    // No quiz exists until the student asks for one; the quiz is made from the code changes.
+    expect(await body(await getQuiz(req(), weekCtx(id, 1)))).toEqual({ quiz: null });
+    state.geminiScript.push({ text: JSON.stringify(modelQuiz()) });
+    const created = await createQuiz(req(json()), weekCtx(id, 1));
+    expect(created.status).toBe(201);
+    const createdText = JSON.stringify(await body(created));
+    expect(createdText).not.toMatch(/correctIndex|explanation/);
+    expect(state.geminiCalls.at(-1)!.contents).toContain("addBook");
+    expect((await createQuiz(req(json()), weekCtx(id, 1))).status).toBe(409); // one quiz per week
+
+    // The teacher sees that the quiz exists but has not been taken, with no answers.
+    const queueBefore = (await body(await getQueue(req()))).evaluations;
+    expect(queueBefore[0].quiz).toEqual({ status: "not_taken", correctCount: null, total: null });
+    const evaluationId = queueBefore[0].evaluationId;
+    const before = await getReviewQuiz(req(), proj(evaluationId));
+    expect((await body(before)).quiz.state).toBe("open");
+
+    // The student answers: three right, two wrong. The server grades it.
+    const stored = (state.quizzes as ReturnType<typeof memoryQuizStore>).quizzes[0].questions;
+    const answers = stored.map((q, i) => (i < 3 ? q.correctIndex : (q.correctIndex + 1) % 4));
+    const attempted = await attemptQuiz(req(json({ answers })), weekCtx(id, 1));
+    expect(attempted.status).toBe(201);
+    expect((await body(attempted)).quiz).toMatchObject({ state: "taken", correctCount: 3, total: 5 });
+    expect((await attemptQuiz(req(json({ answers })), weekCtx(id, 1))).status).toBe(409); // one attempt
+
+    // The teacher now sees the result next to the AI recommendation, which has not changed.
+    expect((await body(await getQueue(req()))).evaluations[0].quiz).toEqual({ status: "taken", correctCount: 3, total: 5 });
+    expect((await body(await getReviewQuiz(req(), proj(evaluationId)))).quiz).toMatchObject({ state: "taken", correctCount: 3 });
+    const detail = await body(await getReview(req(), proj(evaluationId)));
+    expect(detail.evaluation.suggestedScore).toBe(80);
+    expect(detail.evaluation.status).toBe("pending_review");
+
+    // The quiz never becomes a mark: the student's official results are still empty.
+    expect(await body(await getResults(req(), proj(id)))).toEqual({ results: [] });
   });
 
   it("week 2 builds on week 1: it is compared with week 1's commit and the AI is told what was open", async () => {

@@ -1,5 +1,6 @@
-import { ReviewError, type NewDecision, type ReviewStore } from "@/lib/review/service";
+import { quizSummary, ReviewError, type NewDecision, type ReviewStore } from "@/lib/review/service";
 import type { Project } from "@/lib/schemas/project";
+import type { Quiz, QuizAttempt } from "@/lib/schemas/quiz";
 import type { StoredEvaluation } from "@/lib/evaluation/service";
 import type { TeacherDecision } from "@/lib/schemas/teacher-decision";
 
@@ -10,6 +11,8 @@ import type { TeacherDecision } from "@/lib/schemas/teacher-decision";
 export function memoryReviewStore(
   rows: StoredEvaluation[],
   projects: Pick<Project, "id" | "title" | "repoUrl">[],
+  /** Pass the memory quiz store's arrays to include quiz summaries in the queue. */
+  quizData: { quizzes: Quiz[]; attempts: QuizAttempt[] } = { quizzes: [], attempts: [] },
 ) {
   const decisions: TeacherDecision[] = [];
   let n = 0;
@@ -22,7 +25,12 @@ export function memoryReviewStore(
       await tick();
       return rows
         .filter((r) => status === "all" || r.evaluation.status === status)
-        .map(({ evaluation: e }) => ({
+        .map(({ evaluation: e }) => {
+          const quiz = quizData.quizzes.find((q) => q.checkpointId === e.checkpointId);
+          const attempt = quiz ? quizData.attempts.find((a) => a.quizId === quiz.id) : undefined;
+          return { e, quiz: quizSummary(Boolean(quiz), attempt ?? null) };
+        })
+        .map(({ e, quiz }) => ({
           evaluationId: e.id,
           projectId: e.projectId,
           projectTitle: project(e.projectId).title,
@@ -31,6 +39,7 @@ export function memoryReviewStore(
           suggestedScore: e.suggestedScore,
           officialScore: decisions.find((d) => d.evaluationId === e.id)?.approvedScore ?? null,
           confidence: e.confidence.level,
+          quiz,
           createdAt: e.createdAt,
         }));
     },
