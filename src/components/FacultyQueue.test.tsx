@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { QueueItem } from "@/lib/schemas/review";
 
@@ -8,9 +8,13 @@ vi.mock("@/lib/api/client", () => api);
 
 import { FacultyQueue } from "./FacultyQueue";
 
+const PROJECT_A = "123e4567-e89b-42d3-a456-426614174000";
+const PROJECT_B = "223e4567-e89b-42d3-a456-426614174000";
+let n = 0;
+
 const item = (over: Partial<QueueItem> = {}): QueueItem => ({
-  evaluationId: "00000000-0000-4000-9000-000000000001",
-  projectId: "123e4567-e89b-42d3-a456-426614174000",
+  evaluationId: `00000000-0000-4000-9000-${String(++n).padStart(12, "0")}`,
+  projectId: PROJECT_A,
   projectTitle: "Library app",
   weekNumber: 2,
   status: "pending_review",
@@ -24,51 +28,103 @@ const item = (over: Partial<QueueItem> = {}): QueueItem => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  n = 0;
   api.fetchQueue.mockResolvedValue([item()]);
 });
 
+/** The project's dropdown (a <details> element) found by its title. */
+const project = (title: string) => screen.getByText(title).closest("details") as HTMLElement;
+
 describe("FacultyQueue", () => {
-  it("shows pending evaluations, labelling the AI score as not official, with a link to review", async () => {
+  it("shows one dropdown per project, closed to begin with, with the number of weeks", async () => {
+    api.fetchQueue.mockResolvedValue([
+      item({ weekNumber: 1 }),
+      item({ weekNumber: 2 }),
+      item({ weekNumber: 3 }),
+      item({ projectId: PROJECT_B, projectTitle: "Other app", weekNumber: 1 }),
+    ]);
     render(<FacultyQueue />);
     expect(screen.getByText("Loading evaluations…")).toBeInTheDocument();
-    expect(await screen.findByText("Library app · Week 2")).toBeInTheDocument();
-    expect(screen.getByText(/AI suggestion \(not official\): 71.5\/100/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Review/ })).toHaveAttribute(
-      "href",
-      "/faculty/evaluations/00000000-0000-4000-9000-000000000001",
-    );
+    await screen.findByText("Library app");
+    // One dropdown per project, not one card per week.
+    expect(document.querySelectorAll("details")).toHaveLength(2);
+    expect([...document.querySelectorAll("summary")].map((s) => s.textContent)).toEqual([
+      expect.stringContaining("Library app"),
+      expect.stringContaining("Other app"),
+    ]);
+    expect(project("Library app")).not.toHaveAttribute("open");
+    expect(within(project("Library app")).getByText("3 weeks")).toBeInTheDocument();
+    expect(within(project("Other app")).getByText("1 week")).toBeInTheDocument();
     expect(api.fetchQueue).toHaveBeenCalledWith("pending_review");
+  });
+
+  it("opens to a card for each week, in week order, with only the score, a quiz tag and a status", async () => {
+    api.fetchQueue.mockResolvedValue([
+      item({ weekNumber: 3, suggestedScore: 90 }),
+      item({ weekNumber: 1, status: "approved", suggestedScore: 100, officialScore: 80, quiz: { status: "taken", correctCount: 1, total: 5 } }),
+    ]);
+    const user = userEvent.setup();
+    render(<FacultyQueue />);
+    await user.click(await screen.findByText("Library app"));
+    const cards = within(project("Library app")).getAllByRole("listitem");
+    expect(cards.map((c) => c.querySelector("p")?.textContent)).toEqual(["Week 1", "Week 3"]);
+
+    expect(cards[0]).toHaveTextContent("Score 80/100"); // the official score, not the AI's 100
+    expect(cards[0]).not.toHaveTextContent("AI suggestion"); // the AI's own 100 is not on a decided card
+    expect(cards[0]).not.toHaveTextContent("100/100");
+    expect(cards[0]).toHaveTextContent("Quiz 1/5");
+    expect(cards[0]).toHaveTextContent("Approved");
+    expect(cards[1]).toHaveTextContent("AI suggestion 90/100 (not official)");
+    expect(cards[1]).toHaveTextContent("Quiz not started");
+    expect(cards[1]).toHaveTextContent("Waiting for review");
+    // Nothing else: no confidence, dates or other detail on the cards.
+    expect(cards[1]).not.toHaveTextContent(/confidence|created|\d{4}/i);
+  });
+
+  it("shows a quiz that exists but was not taken, and a rejection without a score", async () => {
+    api.fetchQueue.mockResolvedValue([
+      item({ weekNumber: 1, quiz: { status: "not_taken", correctCount: null, total: null } }),
+      item({ weekNumber: 2, status: "rejected", officialScore: null }),
+    ]);
+    const user = userEvent.setup();
+    render(<FacultyQueue />);
+    await user.click(await screen.findByText("Library app"));
+    const cards = within(project("Library app")).getAllByRole("listitem");
+    expect(cards[0]).toHaveTextContent("Quiz not taken");
+    expect(cards[1]).toHaveTextContent("No official score");
+  });
+
+  it("each week links to its review, and the arrow at the bottom links to the project overview", async () => {
+    const week = item({ weekNumber: 2 });
+    api.fetchQueue.mockResolvedValue([week]);
+    const user = userEvent.setup();
+    render(<FacultyQueue />);
+    await user.click(await screen.findByText("Library app"));
+    expect(screen.getByRole("link", { name: /Review/ })).toHaveAttribute("href", `/faculty/evaluations/${week.evaluationId}`);
+    const arrow = screen.getByRole("link", { name: "Open the overview of Library app" });
+    expect(arrow).toHaveAttribute("href", `/faculty/projects/${PROJECT_A}`);
+    expect(arrow).toHaveTextContent("→");
+  });
+
+  it("decided weeks say View instead of Review", async () => {
+    api.fetchQueue.mockResolvedValue([item({ status: "edited", officialScore: 65 })]);
+    const user = userEvent.setup();
+    render(<FacultyQueue />);
+    await user.click(await screen.findByText("Library app"));
+    expect(screen.getByRole("link", { name: /View/ })).toBeInTheDocument();
   });
 
   it("changes the filter and loads that list", async () => {
     api.fetchQueue.mockImplementation(async (status: string) =>
-      status === "approved" ? [item({ status: "approved", projectTitle: "Done project" })] : [item()],
+      status === "approved" ? [item({ status: "approved", projectTitle: "Done project", officialScore: 50 })] : [item()],
     );
     const user = userEvent.setup();
     render(<FacultyQueue />);
-    await screen.findByText("Library app · Week 2");
+    await screen.findByText("Library app");
     await user.click(screen.getByRole("button", { name: "Approved" }));
-    expect(await screen.findByText("Done project · Week 2")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /View/ })).toBeInTheDocument();
+    expect(await screen.findByText("Done project")).toBeInTheDocument();
     expect(api.fetchQueue).toHaveBeenLastCalledWith("approved");
     expect(screen.getByRole("button", { name: "Approved" })).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("shows each student's quiz result next to the row, apart from the AI's score", async () => {
-    api.fetchQueue.mockResolvedValue([
-      item({ evaluationId: "00000000-0000-4000-9000-000000000001", projectTitle: "Taken project", quiz: { status: "taken", correctCount: 1, total: 5 } }),
-      item({ evaluationId: "00000000-0000-4000-9000-000000000002", projectTitle: "Open project", quiz: { status: "not_taken", correctCount: null, total: null } }),
-      item({ evaluationId: "00000000-0000-4000-9000-000000000003", projectTitle: "No quiz project" }),
-    ]);
-    render(<FacultyQueue />);
-    await screen.findByText("Taken project · Week 2");
-    const rows = screen.getAllByRole("listitem");
-    expect(rows[0]).toHaveTextContent("Student quiz: 1/5 correct");
-    expect(rows[1]).toHaveTextContent("Student quiz: created, not taken yet");
-    expect(rows[2]).toHaveTextContent("Student quiz: not started");
-    // The AI's number is still labelled as not official, and the quiz is not folded into it.
-    expect(rows[0]).toHaveTextContent("AI suggestion (not official): 71.5/100");
-    expect(rows[0]).not.toHaveTextContent("Official score");
   });
 
   it("says when nothing is waiting", async () => {
@@ -83,21 +139,6 @@ describe("FacultyQueue", () => {
     render(<FacultyQueue />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Storage is not configured");
     await user.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByText("Library app · Week 2")).toBeInTheDocument();
-  });
-});
-
-describe("FacultyQueue: official versus AI score", () => {
-  it("shows the official score next to the AI's for decided rows, so an edit is not mistaken for the AI's number", async () => {
-    api.fetchQueue.mockResolvedValue([
-      item({ status: "edited", suggestedScore: 15, officialScore: 40 }),
-      item({ evaluationId: "00000000-0000-4000-9000-000000000002", status: "rejected", officialScore: null, weekNumber: 3 }),
-      item({ evaluationId: "00000000-0000-4000-9000-000000000003", status: "pending_review", weekNumber: 4 }),
-    ]);
-    render(<FacultyQueue />);
-    expect(await screen.findByText("Official score: 40/100")).toBeInTheDocument();
-    expect(screen.getByText(/AI suggestion \(not official\): 15\/100/)).toBeInTheDocument();
-    expect(screen.getByText("No official score")).toBeInTheDocument();
-    expect(screen.getAllByText(/Official score|No official score/)).toHaveLength(2); // none for the pending row
+    expect(await screen.findByText("Library app")).toBeInTheDocument();
   });
 });

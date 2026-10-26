@@ -9,6 +9,7 @@ import {
   type Checkpoint,
   type Progress,
 } from "@/lib/schemas/checkpoint";
+import { ProjectOverviewSchema, type ProjectOverview } from "@/lib/schemas/overview";
 import { QuizViewSchema, type QuizView } from "@/lib/schemas/quiz";
 import { RepoInfoSchema, type RepoInfo } from "@/lib/schemas/repo-info";
 import {
@@ -272,6 +273,14 @@ export async function fetchReview(evaluationId: string): Promise<ReviewDetail | 
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(await readError(res));
   return ReviewDetailSchema.parse(await res.json());
+}
+
+/** Faculty: one project with every week, scores and feedback. Null when the project does not exist. */
+export async function fetchProjectOverview(projectId: string): Promise<ProjectOverview | null> {
+  const res = await fetch(`/api/faculty/projects/${encodeURIComponent(projectId)}`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readError(res));
+  return ProjectOverviewSchema.parse(await res.json());
 }
 
 export type DecisionResult =

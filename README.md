@@ -85,7 +85,8 @@ Live tests are in `*.live.test.ts` and are excluded from `npm test`. Each create
 | Route | Who it is for | Notes |
 | --- | --- | --- |
 | `/student`, `/student/projects/[id]` | Students | Create projects, plan, repository check, weekly progress, official results |
-| `/faculty`, `/faculty/evaluations/[id]` | Teachers | Review queue, evidence, decision form |
+| `/faculty`, `/faculty/evaluations/[id]` | Teachers | Dashboard (one dropdown per project, a card per week with score and quiz tag), evidence, decision form |
+| `/faculty/projects/[id]` | Teachers | Project overview: every week with scores, feedback, AI findings and quiz result |
 | `GET/POST /api/projects`, `GET /api/projects/[id]` | Students | |
 | `GET/POST /api/projects/[id]/plan` | Students | POST calls Gemini once |
 | `GET /api/projects/[id]/repo`, `/repo/compare` | Students | GitHub reads |
@@ -93,6 +94,7 @@ Live tests are in `*.live.test.ts` and are excluded from `npm test`. Each create
 | `POST …/weeks/[week]/evaluate` | Students | Returns status only; calls GitHub and Gemini |
 | `GET/POST …/weeks/[week]/quiz`, `POST …/weeks/[week]/quiz/attempt` | Students | GET: the quiz without answers. POST: creates it once (calls GitHub and Gemini). `attempt`: graded on the server, one attempt |
 | `GET /api/projects/[id]/results` | Students | Official results only |
+| `GET /api/faculty/projects/[id]` | Teachers | One project with every week; carries the AI score and your private comments |
 | `GET /api/faculty/evaluations/[id]/quiz` | Teachers | The student's quiz result for that week; answers withheld until the student has attempted it |
 | `GET /api/faculty/evaluations[?status=…]`, `GET …/[id]`, `POST …/[id]/decision` | Teachers | Carry the AI score and the diff |
 | `GET …/weeks/[week]/evaluation` | Teachers | Full AI evaluation; superseded by the faculty routes |

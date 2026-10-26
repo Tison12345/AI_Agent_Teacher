@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { fetchQueue, type QueueFilter } from "@/lib/api/client";
 import type { QueueItem } from "@/lib/schemas/review";
+import { quizTag, STATE_LABEL } from "./labels";
 
 const FILTERS: { value: QueueFilter; label: string }[] = [
   { value: "pending_review", label: "Waiting for review" },
@@ -13,17 +14,23 @@ const FILTERS: { value: QueueFilter; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
-const STATUS_LABEL: Record<QueueItem["status"], string> = {
-  pending_review: "Waiting for review",
-  approved: "Approved",
-  edited: "Edited",
-  rejected: "Rejected",
-};
+/** One project with the weeks that match the filter, in week order. Projects keep the queue's order. */
+type ProjectGroup = { projectId: string; projectTitle: string; weeks: QueueItem[] };
 
-/** The student's own quiz result: separate from the AI's score and never part of the official mark. */
-function quizLabel(quiz: QueueItem["quiz"]): string {
-  if (quiz.status === "taken") return `Student quiz: ${quiz.correctCount}/${quiz.total} correct`;
-  return quiz.status === "not_taken" ? "Student quiz: created, not taken yet" : "Student quiz: not started";
+function groupByProject(items: QueueItem[]): ProjectGroup[] {
+  const groups = new Map<string, ProjectGroup>();
+  for (const item of items) {
+    const group = groups.get(item.projectId) ?? { projectId: item.projectId, projectTitle: item.projectTitle, weeks: [] };
+    group.weeks.push(item);
+    groups.set(item.projectId, group);
+  }
+  return [...groups.values()].map((g) => ({ ...g, weeks: [...g.weeks].sort((a, b) => a.weekNumber - b.weekNumber) }));
+}
+
+/** The score a week's card shows: the teacher's official score once decided, otherwise the AI's, labelled. */
+function scoreText(item: QueueItem): string {
+  if (item.status === "pending_review") return `AI suggestion ${item.suggestedScore}/100 (not official)`;
+  return item.officialScore === null ? "No official score" : `Score ${item.officialScore}/100`;
 }
 
 type Load = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; items: QueueItem[] };
@@ -110,42 +117,65 @@ export function FacultyQueue() {
         </p>
       )}
       {load.status === "ready" && load.items.length > 0 && (
-        <ul className="space-y-2">
-          {load.items.map((item) => (
-            <li
-              key={item.evaluationId}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm"
-            >
-              <div>
-                <p className="font-medium">
-                  {item.projectTitle} · Week {item.weekNumber}
-                </p>
-                <p className="text-xs text-slate-600">
-                  AI suggestion (not official): {item.suggestedScore}/100 · confidence {item.confidence} · created{" "}
-                  {new Date(item.createdAt).toLocaleString()}
-                </p>
-                {item.status !== "pending_review" && (
-                  <p className="text-xs font-medium text-emerald-900">
-                    {item.officialScore === null ? "No official score" : `Official score: ${item.officialScore}/100`}
-                  </p>
-                )}
-                <p className="text-xs text-slate-700">{quizLabel(item.quiz)}</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-800">
-                  {STATUS_LABEL[item.status]}
-                </span>
-                <Link
-                  href={`/faculty/evaluations/${item.evaluationId}`}
-                  className="rounded-md border border-indigo-700 px-3 py-1.5 font-medium text-indigo-700 hover:bg-indigo-50"
-                >
-                  {item.status === "pending_review" ? "Review" : "View"}
-                  <span className="sr-only">
-                    {" "}
-                    {item.projectTitle} week {item.weekNumber}
+        <ul className="space-y-3">
+          {groupByProject(load.items).map((group) => (
+            <li key={group.projectId}>
+              <details className="group rounded-lg border border-slate-200 bg-white shadow-sm">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 font-medium [&::-webkit-details-marker]:hidden">
+                  <span>{group.projectTitle}</span>
+                  <span className="flex items-center gap-2 text-xs font-normal text-slate-600">
+                    {group.weeks.length} {group.weeks.length === 1 ? "week" : "weeks"}
+                    <span aria-hidden="true" className="text-base transition-transform group-open:rotate-180">
+                      ▾
+                    </span>
                   </span>
-                </Link>
-              </div>
+                </summary>
+
+                <div className="space-y-2 border-t border-slate-100 p-3">
+                  <ul className="space-y-2">
+                    {group.weeks.map((item) => (
+                      <li
+                        key={item.evaluationId}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 p-3 text-sm"
+                      >
+                        <div className="space-y-1">
+                          <p className="font-medium">Week {item.weekNumber}</p>
+                          <p className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="text-slate-800">{scoreText(item)}</span>
+                            <span className="rounded bg-indigo-50 px-2 py-0.5 font-medium text-indigo-900">
+                              Quiz {quizTag(item.quiz)}
+                            </span>
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-800">
+                            {STATE_LABEL[item.status]}
+                          </span>
+                          <Link
+                            href={`/faculty/evaluations/${item.evaluationId}`}
+                            className="rounded-md border border-indigo-700 px-3 py-1 font-medium text-indigo-700 hover:bg-indigo-50"
+                          >
+                            {item.status === "pending_review" ? "Review" : "View"}
+                            <span className="sr-only">
+                              {" "}
+                              {item.projectTitle} week {item.weekNumber}
+                            </span>
+                          </Link>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex justify-end">
+                    <Link
+                      href={`/faculty/projects/${group.projectId}`}
+                      className="rounded-md border border-slate-300 px-3 py-1 text-lg leading-none text-indigo-700 hover:bg-indigo-50"
+                    >
+                      <span aria-hidden="true">→</span>
+                      <span className="sr-only">Open the overview of {group.projectTitle}</span>
+                    </Link>
+                  </div>
+                </div>
+              </details>
             </li>
           ))}
         </ul>
