@@ -34,6 +34,9 @@ const student: StudentAssignment = {
 const faculty: FacultyAssignment = {
   ...student,
   submissionCount: 3,
+  awaitingReviewCount: 1,
+  decidedCount: 1,
+  needsAttentionCount: 1,
   hasReferenceAnswers: true,
   referenceAnswers: { "1": "It repeats a block of code." },
 };
@@ -97,11 +100,17 @@ describe("FacultyAssignments", () => {
     expect(cards).toHaveTextContent("Assignments1");
     expect(cards).toHaveTextContent("Questions2");
     expect(cards).toHaveTextContent("Submissions3");
+    expect(cards).toHaveTextContent("Awaiting review1");
+    expect(cards).toHaveTextContent("1 more need attention");
+    expect(cards).toHaveTextContent("Decided1");
     const link = screen.getByRole("link", { name: /Loops and arrays/ });
     expect(link).toHaveAttribute("href", `/faculty/assignments/${ID}`);
     const card = link.closest("article")!;
     expect(card).toHaveTextContent("3 submissions");
     expect(card).toHaveTextContent("7.5 marks");
+    expect(card).toHaveTextContent("1 awaiting review");
+    expect(card).toHaveTextContent("1 decided");
+    expect(card).toHaveTextContent("1 need attention");
     expect(card).toHaveTextContent("Has reference answers");
   });
 
@@ -127,7 +136,7 @@ describe("FacultyAssignments", () => {
     api.fetchFacultyAssignments.mockResolvedValue([]);
     api.createAssignment.mockResolvedValue({
       result: { ok: true },
-      assignment: { ...faculty, submissionCount: 0, title: "Brand new" },
+      assignment: { ...faculty, submissionCount: 0, awaitingReviewCount: 0, decidedCount: 0, needsAttentionCount: 0, title: "Brand new" },
     });
     const user = userEvent.setup();
     render(<FacultyAssignments />);

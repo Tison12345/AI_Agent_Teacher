@@ -146,6 +146,8 @@ A small, separate feature for a college demonstration: faculty create assignment
 - On `/faculty/submissions/[id]` the teacher sees each question's marks, explanation and quotes, then **approves** (copies the AI's marks and feedback), **edits** (new marks, feedback and a private comment) or **rejects** (no marks). This runs through the `decide_submission()` database function; a decision is final. Only after approve or edit does the student see their marks and feedback.
 - Marking runs after the upload response (`after()`), so the student is not kept waiting; the student's page refreshes itself. Faculty can also press **Run AI marking** for a submission whose text was read but not yet marked.
 
+**Phase D** adds the faculty dashboard counts (awaiting review, decided, needing attention), fictional sample answer files in [`samples/`](samples/), an end-to-end live test (`src/lib/submissions/flow.live.test.ts`: real files, real Python reader, real Supabase, scripted Gemini) and a step-by-step demo script, [`docs/DEMO.md`](docs/DEMO.md).
+
 Marking uses the same Gemini key and model as the rest of the app. Marks can differ between runs of the same answer, which is why the teacher decides.
 
 Demo limits, on purpose: **no login** (anyone can open the faculty routes and create or approve), students are identified only by a typed name, scanned documents are not supported (they will be reported as needing OCR), and the data in the demo is fictional.

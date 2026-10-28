@@ -74,6 +74,9 @@ export function FacultySubmissions({ assignmentId }: { assignmentId: string }) {
                     {s.fileName} · {(s.fileSize / 1024).toFixed(0)} KB · {new Date(s.createdAt).toLocaleString()}
                   </p>
                   {s.error && <p className="text-warning">{s.error}</p>}
+                  {s.status === "awaiting_review" && s.aiTotal !== null && (
+                    <p className="text-muted">AI recommends {s.aiTotal} marks (not official, waiting for your decision)</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <span className={status.badge}>{status.label}</span>

@@ -193,6 +193,15 @@ describe("FacultySubmissions", () => {
     ...over,
   });
 
+  it("shows the AI's suggested total only while a submission waits for review, labelled not official", async () => {
+    api.fetchFacultySubmissions.mockResolvedValue([
+      row({ status: "awaiting_review", aiTotal: 10 }),
+      row({ id: "423e4567-e89b-42d3-a456-426614174000", status: "approved", aiTotal: 10 }),
+    ]);
+    render(<FacultySubmissions assignmentId={A} />);
+    expect(await screen.findAllByText(/AI recommends 10 marks \(not official/)).toHaveLength(1);
+  });
+
   it("lists submissions with status badges and a link to each", async () => {
     api.fetchFacultySubmissions.mockResolvedValue([row(), row({ id: "323e4567-e89b-42d3-a456-426614174000", status: "needs_ocr", error: "Scanned." })]);
     render(<FacultySubmissions assignmentId={A} />);

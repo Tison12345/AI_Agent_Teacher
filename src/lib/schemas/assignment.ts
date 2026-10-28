@@ -18,9 +18,19 @@ export const StudentAssignmentSchema = z.object({
   createdAt: z.iso.datetime({ offset: true }),
 });
 
-/** Faculty list entry: the student view plus how many files have been submitted. No reference answers. */
+/**
+ * Faculty list entry: the student view plus how many files have been submitted and where they stand.
+ * No reference answers. The three status counts never overlap; a submission that is still being read
+ * or marked is in none of them.
+ */
 export const FacultyAssignmentSummarySchema = StudentAssignmentSchema.extend({
   submissionCount: z.number().int().min(0),
+  /** Marked by the AI and waiting for the teacher's decision. */
+  awaitingReviewCount: z.number().int().min(0),
+  /** The teacher has decided (approved, edited or rejected). */
+  decidedCount: z.number().int().min(0),
+  /** Failed, or scanned and needing OCR: nothing happens until someone acts. */
+  needsAttentionCount: z.number().int().min(0),
   hasReferenceAnswers: z.boolean(),
 });
 

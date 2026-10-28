@@ -55,16 +55,26 @@ export function FacultyAssignments() {
   const formOpen = creating ?? empty;
   const questionCount = assignments.reduce((n, a) => n + a.questions.length, 0);
   const submissionCount = assignments.reduce((n, a) => n + a.submissionCount, 0);
+  const awaitingCount = assignments.reduce((n, a) => n + a.awaitingReviewCount, 0);
+  const decidedCount = assignments.reduce((n, a) => n + a.decidedCount, 0);
+  const attentionCount = assignments.reduce((n, a) => n + a.needsAttentionCount, 0);
 
   return (
     <div className="space-y-8">
       <OpenAccessNotice />
 
       {load.status === "ready" && (
-        <section aria-label="Summary" className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <section aria-label="Summary" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           <StatCard icon="doc" label="Assignments" value={assignments.length} hint="created by faculty" />
           <StatCard icon="check" label="Questions" value={questionCount} hint="across all assignments" />
           <StatCard icon="student" label="Submissions" value={submissionCount} hint="uploaded by students" />
+          <StatCard
+            icon="clock"
+            label="Awaiting review"
+            value={awaitingCount}
+            hint={attentionCount > 0 ? `${attentionCount} more need attention` : "marked by the AI, not yet decided"}
+          />
+          <StatCard icon="faculty" label="Decided" value={decidedCount} hint="approved, edited or rejected" />
         </section>
       )}
 
@@ -146,6 +156,9 @@ export function FacultyAssignments() {
                     <span className={a.submissionCount > 0 ? "badge-info" : "badge-neutral"}>
                       {a.submissionCount} {a.submissionCount === 1 ? "submission" : "submissions"}
                     </span>
+                    {a.awaitingReviewCount > 0 && <span className="badge-warning">{a.awaitingReviewCount} awaiting review</span>}
+                    {a.decidedCount > 0 && <span className="badge-official">{a.decidedCount} decided</span>}
+                    {a.needsAttentionCount > 0 && <span className="badge-danger">{a.needsAttentionCount} need attention</span>}
                     {a.hasReferenceAnswers && <span className="badge-neutral">Has reference answers</span>}
                   </p>
                 </article>

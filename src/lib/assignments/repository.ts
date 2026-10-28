@@ -50,11 +50,28 @@ function toStudent(row: unknown): StudentAssignment {
   return assignment.data;
 }
 
-function toFaculty(row: unknown, submissionCount: number): FacultyAssignment {
+/** Where an assignment's submissions stand. Computed from their statuses, never stored. */
+export type SubmissionStats = { total: number; awaitingReview: number; decided: number; needsAttention: number };
+
+const NO_SUBMISSIONS: SubmissionStats = { total: 0, awaitingReview: 0, decided: 0, needsAttention: 0 };
+
+export function addToStats(stats: SubmissionStats, status: string): SubmissionStats {
+  return {
+    total: stats.total + 1,
+    awaitingReview: stats.awaitingReview + (status === "awaiting_review" ? 1 : 0),
+    decided: stats.decided + (["approved", "edited", "rejected"].includes(status) ? 1 : 0),
+    needsAttention: stats.needsAttention + (status === "failed" || status === "needs_ocr" ? 1 : 0),
+  };
+}
+
+function toFaculty(row: unknown, stats: SubmissionStats): FacultyAssignment {
   const r = parseRow(FacultyRowSchema, row);
   const assignment = FacultyAssignmentSchema.safeParse({
     ...toStudent(row),
-    submissionCount,
+    submissionCount: stats.total,
+    awaitingReviewCount: stats.awaitingReview,
+    decidedCount: stats.decided,
+    needsAttentionCount: stats.needsAttention,
     hasReferenceAnswers: r.reference_answers !== null && Object.keys(r.reference_answers).length > 0,
     referenceAnswers: r.reference_answers,
   });
@@ -84,19 +101,19 @@ export async function createAssignment(input: AssignmentInput): Promise<FacultyA
     .select(FACULTY_SUMMARY_COLUMNS)
     .single();
   if (error) throw new RepositoryError("db_error", error.message);
-  return toFaculty(data, 0);
+  return toFaculty(data, NO_SUBMISSIONS);
 }
 
-/** Submission counts per assignment. Fine at demo scale: one lightweight column, counted here. */
-async function submissionCounts(): Promise<Map<string, number>> {
-  const { data, error } = await getSupabase().from("submissions").select("assignment_id");
+/** Submission stats per assignment. Fine at demo scale: two lightweight columns, counted here. */
+async function submissionStats(): Promise<Map<string, SubmissionStats>> {
+  const { data, error } = await getSupabase().from("submissions").select("assignment_id, status");
   if (error) throw new RepositoryError("db_error", error.message);
-  const counts = new Map<string, number>();
+  const stats = new Map<string, SubmissionStats>();
   for (const row of data ?? []) {
-    const id = (row as { assignment_id: string }).assignment_id;
-    counts.set(id, (counts.get(id) ?? 0) + 1);
+    const { assignment_id: id, status } = row as { assignment_id: string; status: string };
+    stats.set(id, addToStats(stats.get(id) ?? NO_SUBMISSIONS, status));
   }
-  return counts;
+  return stats;
 }
 
 /** Faculty list: every assignment with its submission count. Reference answers are not included. */
@@ -106,10 +123,10 @@ export async function listFacultyAssignments(): Promise<FacultyAssignmentSummary
     .select(FACULTY_SUMMARY_COLUMNS)
     .order("created_at", { ascending: false });
   if (error) throw new RepositoryError("db_error", error.message);
-  const counts = await submissionCounts();
+  const stats = await submissionStats();
   // Parsing with the summary schema drops the reference answers, which the list never needs.
   return (data ?? []).map((row) =>
-    FacultyAssignmentSummarySchema.parse(toFaculty(row, counts.get((row as { id: string }).id) ?? 0)),
+    FacultyAssignmentSummarySchema.parse(toFaculty(row, stats.get((row as { id: string }).id) ?? NO_SUBMISSIONS)),
   );
 }
 
@@ -122,12 +139,10 @@ export async function getFacultyAssignment(id: string): Promise<FacultyAssignmen
     .maybeSingle();
   if (error) throw new RepositoryError("db_error", error.message);
   if (!data) return null;
-  const { count, error: countError } = await getSupabase()
-    .from("submissions")
-    .select("id", { count: "exact", head: true })
-    .eq("assignment_id", id);
-  if (countError) throw new RepositoryError("db_error", countError.message);
-  return toFaculty(data, count ?? 0);
+  const { data: statuses, error: statusError } = await getSupabase().from("submissions").select("status").eq("assignment_id", id);
+  if (statusError) throw new RepositoryError("db_error", statusError.message);
+  const stats = (statuses ?? []).reduce((sum, row) => addToStats(sum, (row as { status: string }).status), NO_SUBMISSIONS);
+  return toFaculty(data, stats);
 }
 
 /** What students see: read from the view that has no reference answers and no AI columns. */
