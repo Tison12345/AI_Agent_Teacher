@@ -9,6 +9,14 @@ import {
   type FacultyAssignmentSummary,
   type StudentAssignment,
 } from "@/lib/schemas/assignment";
+import {
+  FacultySubmissionSchema,
+  FacultySubmissionSummarySchema,
+  StudentSubmissionSchema,
+  type FacultySubmission,
+  type FacultySubmissionSummary,
+  type StudentSubmission,
+} from "@/lib/schemas/submission";
 import { unflattenErrors, type AssignmentFormErrors, type AssignmentInput } from "@/lib/validation/assignment";
 import {
   BaselineSchema,
@@ -365,4 +373,58 @@ export async function createAssignment(
       errors: parsed.success && parsed.data.error.fields ? unflattenErrors(parsed.data.error.fields) : undefined,
     },
   };
+}
+
+// ---- Submissions (demo build: the student name is typed text, not a login) --------------------
+
+export type UploadResult =
+  | { ok: true; submission: StudentSubmission }
+  | { ok: false; message: string; fields?: { studentName?: string; file?: string } };
+
+/** Sends the file and name; the server stores the file and reads its text before answering. */
+export async function uploadAnswers(assignmentId: string, studentName: string, file: File): Promise<UploadResult> {
+  const form = new FormData();
+  form.set("studentName", studentName);
+  form.set("file", file);
+  const res = await fetch(`/api/assignments/${encodeURIComponent(assignmentId)}/submissions`, { method: "POST", body: form });
+  if (res.ok) {
+    const { submission } = z.object({ submission: StudentSubmissionSchema }).parse(await res.json());
+    return { ok: true, submission };
+  }
+  const parsed = ErrorBodySchema.safeParse(await res.json().catch(() => null));
+  return {
+    ok: false,
+    message: parsed.success ? parsed.data.error.message : `Request failed (${res.status}).`,
+    fields: parsed.success ? { studentName: parsed.data.error.fields?.studentName, file: parsed.data.error.fields?.file } : undefined,
+  };
+}
+
+/** The submissions made under a typed name for one assignment. */
+export async function fetchMySubmissions(assignmentId: string, studentName: string): Promise<StudentSubmission[]> {
+  const res = await fetch(`/api/assignments/${encodeURIComponent(assignmentId)}/submissions?name=${encodeURIComponent(studentName)}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ submissions: z.array(StudentSubmissionSchema) }).parse(await res.json()).submissions;
+}
+
+/** Tries a failed submission again from the stored file. */
+export async function retryProcessing(submissionId: string): Promise<{ ok: true; submission: StudentSubmission } | { ok: false; message: string }> {
+  const res = await fetch(`/api/submissions/${encodeURIComponent(submissionId)}/retry`, { method: "POST" });
+  if (!res.ok) return { ok: false, message: await readError(res) };
+  const { submission } = z.object({ submission: StudentSubmissionSchema }).parse(await res.json());
+  return { ok: true, submission };
+}
+
+export async function fetchFacultySubmissions(assignmentId: string): Promise<FacultySubmissionSummary[]> {
+  const res = await fetch(`/api/faculty/assignments/${encodeURIComponent(assignmentId)}/submissions`, { cache: "no-store" });
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ submissions: z.array(FacultySubmissionSummarySchema) }).parse(await res.json()).submissions;
+}
+
+export async function fetchFacultySubmission(id: string): Promise<FacultySubmission | null> {
+  const res = await fetch(`/api/faculty/submissions/${encodeURIComponent(id)}`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ submission: FacultySubmissionSchema }).parse(await res.json()).submission;
 }

@@ -40,6 +40,7 @@ cp .env.example .env.local     # then fill it in
 | `SUPABASE_SECRET_KEY` | yes | Supabase **secret** key (`sb_secret_…`). Server only. The anon/publishable key is not used. |
 | `GEMINI_API_KEY` | yes | Google AI Studio key. Server only. |
 | `GEMINI_MODEL` | no | Defaults to `gemini-2.5-flash`. Free-tier quota is **per model per day**; if one is used up, set another model you have access to. Preview models can change or be retired. |
+| `EXTRACTOR_URL` / `EXTRACTOR_KEY` | for assignment uploads | The local text-extraction service (default URL `http://127.0.0.1:8001`) and the secret shared with it. Server only. See [extractor/README.md](extractor/README.md) |
 | `GITHUB_TOKEN` | no | Fine-grained, **read-only** token (Contents: Read, Metadata: Read). Without it GitHub allows 60 requests/hour and only public repos work; with it, 5,000/hour. |
 
 Never prefix these with `NEXT_PUBLIC_`. The production build was checked to confirm none of these values appear in any file served to browsers.
@@ -89,7 +90,8 @@ Live tests are in `*.live.test.ts` and are excluded from `npm test`. Each create
 | `/faculty`, `/faculty/evaluations/[id]` | Teachers | Dashboard (one dropdown per project, a card per week with score and quiz tag), evidence, decision form |
 | `/faculty/projects/[id]` | Teachers | Project overview: every week with scores, feedback, AI findings and quiz result |
 | `/student/assignments`, `/student/assignments/[id]` | Students | Assignments with instructions, questions and rubric (demo, in progress) |
-| `/faculty/assignments`, `/faculty/assignments/[id]` | Teachers | Create assignments, see submission counts (demo, in progress) |
+| `/faculty/assignments`, `/faculty/assignments/[id]` | Teachers | Create assignments, see submissions with status (demo, in progress) |
+| `/faculty/submissions/[id]` | Teachers | One submission: original file link, reading warnings, extracted text (demo, in progress) |
 | `GET/POST /api/projects`, `GET /api/projects/[id]` | Students | |
 | `GET/POST /api/projects/[id]/plan` | Students | POST calls Gemini once |
 | `GET /api/projects/[id]/repo`, `/repo/compare` | Students | GitHub reads |
@@ -99,6 +101,8 @@ Live tests are in `*.live.test.ts` and are excluded from `npm test`. Each create
 | `GET /api/projects/[id]/results` | Students | Official results only |
 | `GET /api/assignments`, `GET /api/assignments/[id]` | Students | Assignments without reference answers (read from a database view that has no such column) |
 | `GET/POST /api/faculty/assignments`, `GET /api/faculty/assignments/[id]` | Teachers | Create assignments; carry reference answers |
+| `GET/POST /api/assignments/[id]/submissions`, `POST /api/submissions/[id]/retry` | Students | Upload a PDF/DOCX (the name is typed text); list by name; retry a failed one. Student-safe views only |
+| `GET /api/faculty/assignments/[id]/submissions`, `GET /api/faculty/submissions/[id]` | Teachers | Submissions with status; one submission with the extracted text and a short-lived link to the original |
 | `GET /api/faculty/projects/[id]` | Teachers | One project with every week; carries the AI score and your private comments |
 | `GET /api/faculty/evaluations/[id]/quiz` | Teachers | The student's quiz result for that week; answers withheld until the student has attempted it |
 | `GET /api/faculty/evaluations[?status=…]`, `GET …/[id]`, `POST …/[id]/decision` | Teachers | Carry the AI score and the diff |
@@ -134,7 +138,7 @@ The interface is a dark theme built from a small set of tokens in `src/app/globa
 
 ## AI assignment evaluation (demo, built in phases)
 
-A small, separate feature for a college demonstration: faculty create assignments (questions, marks, rubric, optional reference answers); students upload a PDF or DOCX; the answer is graded per question by Gemini as a *recommendation*; faculty review and approve before a student sees any mark. **Phase A (this commit) covers the schema, assignment creation and the student/faculty assignment pages.** Uploads, text extraction and AI marking come in later phases.
+A small, separate feature for a college demonstration: faculty create assignments (questions, marks, rubric, optional reference answers); students upload a PDF or DOCX; the answer is graded per question by Gemini as a *recommendation*; faculty review and approve before a student sees any mark. **Phase A** is the schema, assignment creation and the assignment pages. **Phase B** adds student uploads (PDF/DOCX, up to 4 MB) stored in a private Supabase bucket, text extraction by the small Python service in [`extractor/`](extractor/README.md), and the statuses Processing, Needs OCR and Failed (with Try again). AI marking and faculty approval come in the next phases.
 
 Demo limits, on purpose: **no login** (anyone can open the faculty routes and create or approve), students are identified only by a typed name, scanned documents are not supported (they will be reported as needing OCR), and the data in the demo is fictional.
 

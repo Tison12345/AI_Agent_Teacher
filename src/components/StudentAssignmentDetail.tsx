@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { fetchStudentAssignment } from "@/lib/api/client";
 import type { StudentAssignment } from "@/lib/schemas/assignment";
 import { QuestionList } from "./AssignmentParts";
+import { StudentSubmitSection } from "./StudentSubmitSection";
 
 type Load =
   | { status: "loading" }
@@ -84,6 +85,7 @@ export function StudentAssignmentDetail({ id }: { id: string }) {
             </h2>
             <QuestionList questions={load.assignment.questions} />
           </section>
+          <StudentSubmitSection assignmentId={load.assignment.id} maxMarks={load.assignment.maxMarks} />
         </>
       )}
     </div>

@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   fetchFacultyAssignments: vi.fn(),
   fetchFacultyAssignment: vi.fn(),
   createAssignment: vi.fn(),
+  fetchFacultySubmissions: vi.fn(),
 }));
 vi.mock("@/lib/api/client", () => api);
 
@@ -39,6 +40,7 @@ const faculty: FacultyAssignment = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  api.fetchFacultySubmissions.mockResolvedValue([]);
 });
 
 describe("StudentAssignments", () => {
@@ -160,7 +162,8 @@ describe("FacultyAssignmentDetail", () => {
     expect(screen.getByText("It repeats a block of code.")).toBeInTheDocument();
     expect(screen.getByText("Reference answer (faculty only)")).toBeInTheDocument();
     expect(screen.getAllByText("Reference answer (faculty only)")).toHaveLength(1); // only question 1 has one
-    expect(screen.getByText("3 submissions received.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Submissions" })).toBeInTheDocument();
+    expect(api.fetchFacultySubmissions).toHaveBeenCalledWith(ID);
     expect(screen.getByRole("link", { name: /Back to assignments/ })).toHaveAttribute("href", "/faculty/assignments");
   });
 

@@ -40,3 +40,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python extraction service
+/extractor/.venv/
+__pycache__/
+.pytest_cache/

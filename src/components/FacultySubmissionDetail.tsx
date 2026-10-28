@@ -1,0 +1,156 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { fetchFacultySubmission } from "@/lib/api/client";
+import type { FacultySubmission } from "@/lib/schemas/submission";
+import { OpenAccessNotice } from "./AssignmentParts";
+import { FACULTY_STATUS } from "./submission-labels";
+import { Disclosure } from "./ui";
+
+type Load =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "missing" }
+  | { status: "ready"; submission: FacultySubmission };
+
+/** Faculty: one submission with the original file link and the text that was read from it. */
+export function FacultySubmissionDetail({ id }: { id: string }) {
+  const [load, setLoad] = useState<Load>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchFacultySubmission(id).then(
+      (submission) => {
+        if (!cancelled) setLoad(submission ? { status: "ready", submission } : { status: "missing" });
+      },
+      (error: unknown) => {
+        if (!cancelled) setLoad({ status: "error", message: error instanceof Error ? error.message : "Could not load the submission." });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [id, attempt]);
+
+  return (
+    <div className="space-y-6">
+      {load.status === "ready" ? (
+        <Link href={`/faculty/assignments/${load.submission.assignmentId}`} className="inline-flex text-sm font-medium text-link hover:text-fg">
+          ← Back to the assignment
+        </Link>
+      ) : (
+        <Link href="/faculty/assignments" className="inline-flex text-sm font-medium text-link hover:text-fg">
+          ← Back to assignments
+        </Link>
+      )}
+      <OpenAccessNotice />
+      {load.status === "loading" && <p role="status">Loading submission…</p>}
+      {load.status === "missing" && (
+        <p role="alert" className="card p-5">
+          This submission does not exist.
+        </p>
+      )}
+      {load.status === "error" && (
+        <div role="alert" className="alert-danger">
+          <p>Could not load the submission: {load.message}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setLoad({ status: "loading" });
+              setAttempt((n) => n + 1);
+            }}
+            className="btn-secondary btn-sm mt-3"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+      {load.status === "ready" && <Detail submission={load.submission} />}
+    </div>
+  );
+}
+
+function Detail({ submission: s }: { submission: FacultySubmission }) {
+  const status = FACULTY_STATUS[s.status];
+  const totalChars = s.extraction?.pages.reduce((sum, p) => sum + p.chars, 0) ?? 0;
+  return (
+    <>
+      <header className="space-y-2">
+        <p className="eyebrow">Submission</p>
+        <h1 className="text-3xl font-bold tracking-tight">{s.studentName}</h1>
+        <p className="flex flex-wrap items-center gap-2">
+          <span className={status.badge}>{status.label}</span>
+          <span className="badge-neutral">{s.fileType.toUpperCase()}</span>
+          <span className="badge-neutral">{(s.fileSize / 1024).toFixed(0)} KB</span>
+          <span className="badge-neutral">Submitted {new Date(s.createdAt).toLocaleString()}</span>
+        </p>
+      </header>
+
+      {s.error && (
+        <p role="alert" className="alert-warning">
+          {s.error}
+        </p>
+      )}
+
+      <section aria-labelledby="original-heading" className="card space-y-2 p-6">
+        <h2 id="original-heading" className="text-lg font-semibold">
+          Original file
+        </h2>
+        <p className="break-all text-sm text-muted">{s.fileName}</p>
+        {s.downloadUrl ? (
+          <a href={s.downloadUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary btn-sm">
+            Download the original
+            <span className="sr-only"> ({s.fileName}, opens in a new tab)</span>
+          </a>
+        ) : (
+          <p className="text-sm text-muted">The original file link could not be created.</p>
+        )}
+        <p className="text-xs text-muted">The link stops working after a few minutes; reload this page for a new one.</p>
+      </section>
+
+      <section aria-labelledby="text-heading" className="card space-y-3 p-6">
+        <h2 id="text-heading" className="text-lg font-semibold">
+          Text read from the file
+        </h2>
+        {s.extractedText === null ? (
+          <p className="text-sm text-muted">No text has been read from this file.</p>
+        ) : (
+          <>
+            <p className="flex flex-wrap gap-2">
+              <span className="badge-neutral">
+                {s.extraction?.pages.length ?? 0} {s.extraction?.pages.length === 1 ? "page" : "pages"}
+              </span>
+              <span className="badge-neutral">{totalChars.toLocaleString()} characters</span>
+            </p>
+            {s.extraction && s.extraction.warnings.length > 0 && (
+              <div className="alert-warning text-sm">
+                <p className="font-semibold">Reading warnings</p>
+                <ul className="list-disc space-y-0.5 pl-5">
+                  {s.extraction.warnings.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <Disclosure className="well p-3" summary={<span className="px-1 py-1 text-sm font-semibold">Show the extracted text</span>}>
+              <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-canvas/70 p-4 text-sm text-fg">
+                {s.extractedText}
+              </pre>
+            </Disclosure>
+          </>
+        )}
+      </section>
+
+      <section aria-labelledby="ai-heading" className="card space-y-1 p-6">
+        <h2 id="ai-heading" className="text-lg font-semibold">
+          AI recommendation
+        </h2>
+        <p className="text-sm text-muted">
+          {s.aiTotal === null ? "No AI marking has been done for this submission yet." : `The AI recommends ${s.aiTotal} marks. It is not official.`}
+        </p>
+      </section>
+    </>
+  );
+}

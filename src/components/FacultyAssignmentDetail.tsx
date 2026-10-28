@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { fetchFacultyAssignment } from "@/lib/api/client";
 import type { FacultyAssignment } from "@/lib/schemas/assignment";
 import { OpenAccessNotice, QuestionList } from "./AssignmentParts";
+import { FacultySubmissions } from "./FacultySubmissions";
 
 type Load =
   | { status: "loading" }
@@ -97,18 +98,7 @@ function Detail({ assignment: a }: { assignment: FacultyAssignment }) {
         <QuestionList questions={a.questions} referenceAnswers={a.referenceAnswers} />
       </section>
 
-      <section aria-labelledby="submissions-heading" className="space-y-3">
-        <h2 id="submissions-heading" className="text-lg font-semibold">
-          Submissions
-        </h2>
-        {a.submissionCount === 0 ? (
-          <p className="card border-dashed p-6 text-center text-muted">No student has submitted an answer yet.</p>
-        ) : (
-          <p className="card p-6 text-muted">
-            {a.submissionCount} {a.submissionCount === 1 ? "submission" : "submissions"} received.
-          </p>
-        )}
-      </section>
+      <FacultySubmissions assignmentId={a.id} />
     </>
   );
 }
