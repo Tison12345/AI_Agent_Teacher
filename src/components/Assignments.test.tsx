@@ -95,7 +95,7 @@ describe("FacultyAssignments", () => {
   it("shows the demo notice, summary cards, and each assignment with its submission count", async () => {
     api.fetchFacultyAssignments.mockResolvedValue([summary]);
     render(<FacultyAssignments />);
-    expect(screen.getByText(/Demo build, no login/)).toBeInTheDocument();
+    expect(screen.getByText(/Demo build, demo sign-in/)).toBeInTheDocument();
     const cards = await screen.findByRole("region", { name: "Summary" });
     expect(cards).toHaveTextContent("Assignments1");
     expect(cards).toHaveTextContent("Questions2");
@@ -167,7 +167,7 @@ describe("FacultyAssignmentDetail", () => {
     api.fetchFacultyAssignment.mockResolvedValue(faculty);
     render(<FacultyAssignmentDetail id={ID} />);
     expect(await screen.findByRole("heading", { level: 1, name: "Loops and arrays" })).toBeInTheDocument();
-    expect(screen.getByText(/Demo build, no login/)).toBeInTheDocument();
+    expect(screen.getByText(/Demo build, demo sign-in/)).toBeInTheDocument();
     expect(screen.getByText("It repeats a block of code.")).toBeInTheDocument();
     expect(screen.getByText("Reference answer (faculty only)")).toBeInTheDocument();
     expect(screen.getAllByText("Reference answer (faculty only)")).toHaveLength(1); // only question 1 has one

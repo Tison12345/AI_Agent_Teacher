@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Session } from "@/lib/auth/session";
 import { EvaluationProgressSchema, type EvaluationProgress } from "@/lib/workflow/evaluation/progress";
 import { WorkflowProgressSchema, type WorkflowProgress } from "@/lib/workflow/submission/progress";
 import type { ProjectSubmitResult } from "@/components/ProjectForm";
@@ -488,3 +489,27 @@ export const resumeSubmissionWorkflow = (submissionId: string) => resumeAt(`/api
 /** Continues a week's stalled evaluation workflow from the step it stopped at. */
 export const resumeEvaluationWorkflow = (projectId: string, weekNumber: number) =>
   resumeAt(`/api/projects/${encodeURIComponent(projectId)}/weeks/${weekNumber}/workflow`);
+
+export type LoginResult =
+  | { ok: true; session: Session; redirect: string }
+  | { ok: false; message: string; fields?: Record<string, string> };
+
+/** Demo sign-in: a role, an email and the shared demo password. */
+export async function login(input: { role: string; email: string; password: string; next?: string | null }): Promise<LoginResult> {
+  const res = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+  if (res.ok) {
+    const body = z.object({ session: z.object({ role: z.enum(["student", "faculty"]), email: z.string() }), redirect: z.string() }).parse(await res.json());
+    return { ok: true, session: body.session, redirect: body.redirect };
+  }
+  const parsed = z
+    .object({ error: z.object({ message: z.string(), fields: z.record(z.string(), z.string()).optional() }) })
+    .safeParse(await res.json().catch(() => null));
+  return parsed.success
+    ? { ok: false, message: parsed.data.error.message, fields: parsed.data.error.fields }
+    : { ok: false, message: `Sign-in failed (${res.status}).` };
+}
+
+/** Signs out (removes the demo sign-in cookie). */
+export async function logout(): Promise<void> {
+  await fetch("/api/auth/logout", { method: "POST" });
+}

@@ -2,7 +2,7 @@
 
 Students submit a project with a GitHub repository. Gemini turns it into a weekly plan. The project's length (1 to 16 weeks, 12 by default) is chosen when it is created. Each week the student records a checkpoint, the server reads the Git changes since the previous checkpoint, and Gemini writes a *recommended* evaluation. A teacher reviews it and makes the **official** decision. Students see only what the teacher approves.
 
-> **Not ready for public deployment.** There is no login. Anyone who can reach the server can create projects, record checkpoints, **read AI scores, and submit teacher decisions**. See [Limitations](#limitations-read-before-using).
+> **Not ready for public deployment.** The only sign-in is a **demo** one: a Student/Faculty choice, an email and the shared password `1234`, printed on the sign-in page ([docs/DEMO-LOGIN.md](docs/DEMO-LOGIN.md)). It is not security. Anyone who can reach the server can sign in as either role, and much of the API is open. See [Limitations](#limitations-read-before-using).
 
 > **Workflows.** Assignment marking and the weekly evaluation run as LangGraph.js graphs with saved checkpoints, a pause for faculty approval, bounded retries, and live progress in the pages. See [docs/WORKFLOWS.md](docs/WORKFLOWS.md).
 
@@ -130,7 +130,7 @@ The interface is a dark theme built from a small set of tokens in `src/app/globa
 
 ## Limitations (read before using)
 
-1. **No authentication or authorization.** Every route is open. The `/api/faculty/*` routes and `…/weeks/[week]/evaluation` return AI scores, and the decision route lets anyone record an official decision. Students are not separated from each other; the student dashboard lists every project. Adding login is the first thing to do before real use (Supabase Auth with student/teacher roles; the faculty routes share one prefix to make this easy).
+1. **Demo sign-in only, no real authentication.** Student pages need the student role, and faculty pages and `/api/faculty/*` need the faculty role, but both roles share the public password `1234`, the cookie is not signed, and the rest of the API (`/api/projects/*`, `/api/assignments/*`, `/api/submissions/*`, `…/weeks/[week]/evaluation`, which returns AI scores) is open. Students are not separated from each other; the student dashboard lists every project. Real authentication (Supabase Auth with student/teacher roles) is the first thing to add before real use; the role rules are in one place, `src/lib/auth/session.ts`, and the gate is `src/proxy.ts`.
 2. **AI scores are not trustworthy on their own.** In testing the model scored a complete week 100/100 twice and reports "high" confidence even on very small diffs. It sees changed lines only, never runs code, and cannot judge whether the program works or who wrote it. Teacher review is essential.
 3. **Decisions are final.** There is no revise-with-history workflow.
 4. **Gemini quota.** On the free tier, a daily limit per model can be exhausted by a handful of evaluations. The app reports a daily limit differently from a per-minute one, but cannot fix either.
@@ -138,7 +138,7 @@ The interface is a dark theme built from a small set of tokens in `src/app/globa
 6. **Force-push.** If a student rewrites history before the evaluation is generated, the commit may vanish and the evaluation fails with a clear message. Evaluate right after recording.
 7. **Duplicate calls.** Simultaneous requests can each spend one Gemini call; only one result is ever stored.
 8. **Duration is chosen once.** A project's length (1 to 16 weeks) cannot be changed after it is created, and each project has one plan with no regeneration.
-9. **The quiz is only as good as the questions.** Gemini writes them from changed lines it can see, and has not run the code. There is no check that a question is actually answerable from the diff beyond the format rules, no way for a teacher to edit or remove a question, and one attempt means a student who closes the page mid-quiz cannot continue it. A week with no readable code (only images, generated or deleted files) gets no quiz. Without login, anyone with the project link can take or submit a student's quiz.
+9. **The quiz is only as good as the questions.** Gemini writes them from changed lines it can see, and has not run the code. There is no check that a question is actually answerable from the diff beyond the format rules, no way for a teacher to edit or remove a question, and one attempt means a student who closes the page mid-quiz cannot continue it. A week with no readable code (only images, generated or deleted files) gets no quiz. With only the demo sign-in, anyone with the project link can take or submit a student's quiz.
 10. **Not checked:** the app has not been deployed or load-tested, and the pages have not been audited with browser accessibility tooling (see the final report for what was and was not checked).
 
 ## AI assignment evaluation (demo, built in phases)
@@ -154,7 +154,7 @@ A small, separate feature for a college demonstration: faculty create assignment
 
 Marking uses the same Gemini key and model as the rest of the app. Marks can differ between runs of the same answer, which is why the teacher decides.
 
-Demo limits, on purpose: **no login** (anyone can open the faculty routes and create or approve), students are identified only by a typed name, scanned documents are not supported (they will be reported as needing OCR), and the data in the demo is fictional.
+Demo limits, on purpose: **only a demo sign-in** (the shared password `1234`, printed on the page, so anyone can sign in as faculty and create or approve), students are identified only by a typed name, scanned documents are not supported (they will be reported as needing OCR), and the data in the demo is fictional.
 
 ## Deployment notes
 

@@ -49,6 +49,8 @@ To rebuild the files: `extractor\.venv\Scripts\python -I samples\make_samples.py
 
 ## The walk-through
 
+0. **Sign in** at /login. Choose **Faculty**, type an email (for example `dr.rao@gmail.com`), password `1234` (printed on the page; demo only, see [DEMO-LOGIN.md](DEMO-LOGIN.md)). You land on the Faculty Dashboard. To play the student, **Log out** (bottom of the sidebar) and sign in as **Student** with an email like `asha.fictional@gmail.com`, or use a second browser window. Opening the other role's page sends you back to the sign-in page.
+
 1. **Faculty dashboard** (/faculty/assignments): the cards show assignments, questions, submissions, *Awaiting review* and *Decided*. Open the assignment; open a question to see its rubric and reference answer (faculty only).
 2. **Student upload** (/student/assignments, open the assignment): type a name (for example *Asha Fictional*), choose `strong-answers.docx`, **Submit answers**. The card shows the workflow's real steps: *Reading your file*, *Checking the text can be read*, *AI marking*, *Checking the marking*, *Saving the recommendation*, then *Faculty review* (waiting). The status ends as *Awaiting faculty review*; the page refreshes by itself. The student sees **no marks**, and the steps carry no text or scores.
 3. **Faculty review** (the submission page): read the extracted text, then the **AI recommendation** (marked *Not official*): marks per question, an explanation, and quotes from the student's own words. Point out that every mark has a quote.
@@ -67,7 +69,7 @@ To rebuild the files: `extractor\.venv\Scripts\python -I samples\make_samples.py
 
 ## What to say about the limits
 
-- **No login.** Anyone who can open the site can use the faculty pages, and a student is only a typed name. This is a demo; a real deployment needs accounts.
+- **The sign-in is a demo.** Both roles share the password `1234`, which is printed on the sign-in page, so it keeps the pages apart for the demonstration but is not security. A student is only a typed name. A real deployment needs accounts.
 - **Typed documents only.** Scanned or handwritten pages are reported, not guessed. OCR would be a later addition.
 - **The AI never decides.** Its marks are a recommendation, stored once and kept apart from the official result.
 - The AI cannot run code; it judges what is written. Quotes prove the words are in the answer, not that they are correct.

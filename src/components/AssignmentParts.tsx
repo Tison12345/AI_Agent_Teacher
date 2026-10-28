@@ -1,12 +1,12 @@
 import type { Question } from "@/lib/schemas/assignment";
 import { Disclosure } from "./ui";
 
-/** Said on every faculty assignment page: the demo has no login. */
+/** Said on every faculty assignment page: the sign-in is a demo one. */
 export function OpenAccessNotice() {
   return (
     <p className="alert-warning text-sm">
-      <strong>Demo build, no login.</strong> Anyone who can open this site can create assignments and, later, approve
-      marks. The student name is just typed text, not an account. This is for demonstration only.
+      <strong>Demo build, demo sign-in.</strong> Both roles share the password 1234, so anyone who reads the sign-in page can
+      create assignments and approve marks. The student name is just typed text, not an account. For demonstration only.
     </p>
   );
 }

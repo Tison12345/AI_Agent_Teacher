@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
+import { Suspense } from "react";
+import { SessionNav } from "@/components/SessionNav";
 import { SiteNav } from "@/components/SiteNav";
 import "./globals.css";
 
@@ -24,7 +26,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           Skip to main content
         </a>
-        <SiteNav />
+        {/* The navigation depends on who is signed in, so it streams in; until then only the logo shows. */}
+        <Suspense fallback={<SiteNav />}>
+          <SessionNav />
+        </Suspense>
         <div className="lg:pl-64">
           <main id="main" className="mx-auto w-full max-w-6xl break-words px-4 py-8 sm:px-8 lg:py-10">
             {children}

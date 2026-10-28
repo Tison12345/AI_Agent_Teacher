@@ -8,7 +8,7 @@ import { STUDENT_STATUS } from "./submission-labels";
 import { Icon } from "./ui";
 import { WorkflowProgress } from "./WorkflowProgress";
 
-const NAME_KEY = "coLearning.studentName";
+export const NAME_KEY = "coLearning.studentName";
 const MAX_BYTES = 4 * 1024 * 1024;
 const POLL_MS = 5000;
 

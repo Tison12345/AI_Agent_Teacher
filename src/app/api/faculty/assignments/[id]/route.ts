@@ -2,7 +2,7 @@ import { z } from "zod";
 import { errorResponse, handleUnexpected } from "@/lib/api/errors";
 import { getFacultyAssignment } from "@/lib/assignments/repository";
 
-// Demo build: no login. Carries the reference answers, so it is for faculty screens only.
+// Demo build: demo faculty sign-in only (src/proxy.ts). Carries the reference answers, so it is for faculty screens only.
 export async function GET(_request: Request, ctx: RouteContext<"/api/faculty/assignments/[id]">) {
   const { id } = await ctx.params;
   if (!z.uuid().safeParse(id).success) {

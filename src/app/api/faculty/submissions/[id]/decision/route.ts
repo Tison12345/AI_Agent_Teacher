@@ -6,7 +6,7 @@ import { submissionDecisionSchema } from "@/lib/validation/submission-decision";
 import { getSubmissionRunner } from "@/lib/workflow/submission";
 
 /**
- * Demo build: no login. The official decision: approve the AI's recommendation, edit it, or reject. It is final.
+ * Demo build: demo faculty sign-in only (src/proxy.ts). The official decision: approve the AI's recommendation, edit it, or reject. It is final.
  * The browser sends only the choice (and, for an edit, marks, feedback and a comment): the totals are computed
  * and every rule is enforced in the database.
  */

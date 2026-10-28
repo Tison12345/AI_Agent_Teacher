@@ -268,7 +268,7 @@ describe("FacultySubmissionDetail", () => {
     const user = userEvent.setup();
     render(<FacultySubmissionDetail id={S} />);
     expect(await screen.findByRole("heading", { level: 1, name: "Asha Fictional" })).toBeInTheDocument();
-    expect(screen.getByText(/Demo build, no login/)).toBeInTheDocument();
+    expect(screen.getByText(/Demo build, demo sign-in/)).toBeInTheDocument();
     const download = screen.getByRole("link", { name: /Download the original/ });
     expect(download).toHaveAttribute("href", "https://example.test/signed");
     expect(download).toHaveAttribute("rel", "noopener noreferrer");
