@@ -91,7 +91,7 @@ Live tests are in `*.live.test.ts` and are excluded from `npm test`. Each create
 | `/faculty/projects/[id]` | Teachers | Project overview: every week with scores, feedback, AI findings and quiz result |
 | `/student/assignments`, `/student/assignments/[id]` | Students | Assignments with instructions, questions and rubric (demo, in progress) |
 | `/faculty/assignments`, `/faculty/assignments/[id]` | Teachers | Create assignments, see submissions with status (demo, in progress) |
-| `/faculty/submissions/[id]` | Teachers | One submission: original file link, reading warnings, extracted text (demo, in progress) |
+| `/faculty/submissions/[id]` | Teachers | One submission: original file, extracted text, AI recommendation, and the approve / edit / reject decision (demo) |
 | `GET/POST /api/projects`, `GET /api/projects/[id]` | Students | |
 | `GET/POST /api/projects/[id]/plan` | Students | POST calls Gemini once |
 | `GET /api/projects/[id]/repo`, `/repo/compare` | Students | GitHub reads |
@@ -102,7 +102,8 @@ Live tests are in `*.live.test.ts` and are excluded from `npm test`. Each create
 | `GET /api/assignments`, `GET /api/assignments/[id]` | Students | Assignments without reference answers (read from a database view that has no such column) |
 | `GET/POST /api/faculty/assignments`, `GET /api/faculty/assignments/[id]` | Teachers | Create assignments; carry reference answers |
 | `GET/POST /api/assignments/[id]/submissions`, `POST /api/submissions/[id]/retry` | Students | Upload a PDF/DOCX (the name is typed text); list by name; retry a failed one. Student-safe views only |
-| `GET /api/faculty/assignments/[id]/submissions`, `GET /api/faculty/submissions/[id]` | Teachers | Submissions with status; one submission with the extracted text and a short-lived link to the original |
+| `GET /api/faculty/assignments/[id]/submissions`, `GET /api/faculty/submissions/[id]` | Teachers | Submissions with status; one submission with the extracted text, the AI recommendation, the decision and a short-lived link to the original |
+| `POST /api/faculty/submissions/[id]/grade`, `POST /api/faculty/submissions/[id]/decision` | Teachers | Run the AI marking now; the official decision (approve, edit or reject, final) |
 | `GET /api/faculty/projects/[id]` | Teachers | One project with every week; carries the AI score and your private comments |
 | `GET /api/faculty/evaluations/[id]/quiz` | Teachers | The student's quiz result for that week; answers withheld until the student has attempted it |
 | `GET /api/faculty/evaluations[?status=…]`, `GET …/[id]`, `POST …/[id]/decision` | Teachers | Carry the AI score and the diff |
@@ -138,7 +139,14 @@ The interface is a dark theme built from a small set of tokens in `src/app/globa
 
 ## AI assignment evaluation (demo, built in phases)
 
-A small, separate feature for a college demonstration: faculty create assignments (questions, marks, rubric, optional reference answers); students upload a PDF or DOCX; the answer is graded per question by Gemini as a *recommendation*; faculty review and approve before a student sees any mark. **Phase A** is the schema, assignment creation and the assignment pages. **Phase B** adds student uploads (PDF/DOCX, up to 4 MB) stored in a private Supabase bucket, text extraction by the small Python service in [`extractor/`](extractor/README.md), and the statuses Processing, Needs OCR and Failed (with Try again). AI marking and faculty approval come in the next phases.
+A small, separate feature for a college demonstration: faculty create assignments (questions, marks, rubric, optional reference answers); students upload a PDF or DOCX; the answer is graded per question by Gemini as a *recommendation*; faculty review and approve before a student sees any mark. **Phase A** is the schema, assignment creation and the assignment pages. **Phase B** adds student uploads (PDF/DOCX, up to 4 MB) stored in a private Supabase bucket, text extraction by the small Python service in [`extractor/`](extractor/README.md), and the statuses Processing, Needs OCR and Failed (with Try again). **Phase C** adds the AI marking and the faculty decision:
+
+- After a file is read, Gemini marks each question against its rubric (and reference answer, if there is one). The answer must quote the student's own words for every mark above 0, and each quote is checked against the extracted text; marks are checked against each question's maximum. One corrected retry, then the submission is kept as *Failed* with a reason and a Try again button.
+- The result is stored as the AI's **recommendation** only (`ai_result`, written once). The total is computed by the database, never by the AI or the browser. The submission becomes *Awaiting faculty review*, and the student sees nothing yet.
+- On `/faculty/submissions/[id]` the teacher sees each question's marks, explanation and quotes, then **approves** (copies the AI's marks and feedback), **edits** (new marks, feedback and a private comment) or **rejects** (no marks). This runs through the `decide_submission()` database function; a decision is final. Only after approve or edit does the student see their marks and feedback.
+- Marking runs after the upload response (`after()`), so the student is not kept waiting; the student's page refreshes itself. Faculty can also press **Run AI marking** for a submission whose text was read but not yet marked.
+
+Marking uses the same Gemini key and model as the rest of the app. Marks can differ between runs of the same answer, which is why the teacher decides.
 
 Demo limits, on purpose: **no login** (anyone can open the faculty routes and create or approve), students are identified only by a typed name, scanned documents are not supported (they will be reported as needing OCR), and the data in the demo is fictional.
 

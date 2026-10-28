@@ -85,7 +85,7 @@ export function StudentAssignmentDetail({ id }: { id: string }) {
             </h2>
             <QuestionList questions={load.assignment.questions} />
           </section>
-          <StudentSubmitSection assignmentId={load.assignment.id} maxMarks={load.assignment.maxMarks} />
+          <StudentSubmitSection assignmentId={load.assignment.id} maxMarks={load.assignment.maxMarks} questions={load.assignment.questions} />
         </>
       )}
     </div>

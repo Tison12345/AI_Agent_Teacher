@@ -18,6 +18,7 @@ import {
   type StudentSubmission,
 } from "@/lib/schemas/submission";
 import { unflattenErrors, type AssignmentFormErrors, type AssignmentInput } from "@/lib/validation/assignment";
+import type { SubmissionDecisionInput } from "@/lib/validation/submission-decision";
 import {
   BaselineSchema,
   CheckpointSchema,
@@ -427,4 +428,33 @@ export async function fetchFacultySubmission(id: string): Promise<FacultySubmiss
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(await readError(res));
   return z.object({ submission: FacultySubmissionSchema }).parse(await res.json()).submission;
+}
+
+export type SubmissionActionResult =
+  | { ok: true; submission: FacultySubmission }
+  | { ok: false; message: string; fields?: Record<string, string> };
+
+async function submissionAction(url: string, body?: unknown): Promise<SubmissionActionResult> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (res.ok) {
+    return { ok: true, submission: z.object({ submission: FacultySubmissionSchema }).parse(await res.json()).submission };
+  }
+  const parsed = ErrorBodySchema.safeParse(await res.json().catch(() => null));
+  return parsed.success
+    ? { ok: false, message: parsed.data.error.message, fields: parsed.data.error.fields }
+    : { ok: false, message: `Request failed (${res.status}).` };
+}
+
+/** Faculty: runs the AI marking now. It only produces a recommendation; this can take up to a minute. */
+export function runAiMarking(submissionId: string): Promise<SubmissionActionResult> {
+  return submissionAction(`/api/faculty/submissions/${encodeURIComponent(submissionId)}/grade`);
+}
+
+/** Faculty: the official decision on a submission. It is final. */
+export function decideSubmission(submissionId: string, decision: SubmissionDecisionInput): Promise<SubmissionActionResult> {
+  return submissionAction(`/api/faculty/submissions/${encodeURIComponent(submissionId)}/decision`, decision);
 }

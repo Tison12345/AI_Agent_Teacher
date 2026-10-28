@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { fetchMySubmissions, retryProcessing, uploadAnswers } from "@/lib/api/client";
+import type { Question } from "@/lib/schemas/assignment";
 import type { StudentSubmission } from "@/lib/schemas/submission";
 import { STUDENT_STATUS } from "./submission-labels";
 import { Icon } from "./ui";
 
 const NAME_KEY = "coLearning.studentName";
 const MAX_BYTES = 4 * 1024 * 1024;
+const POLL_MS = 5000;
 
 function readStoredName(): string {
   if (typeof window === "undefined") return "";
@@ -32,7 +34,15 @@ type List = { status: "idle" } | { status: "loading" } | { status: "error"; mess
  * Student: upload answers as a PDF or DOCX, and see the submissions made under the typed name.
  * Demo build: the name is just text, so anyone typing it sees those submissions.
  */
-export function StudentSubmitSection({ assignmentId, maxMarks }: { assignmentId: string; maxMarks: number }) {
+export function StudentSubmitSection({
+  assignmentId,
+  maxMarks,
+  questions = [],
+}: {
+  assignmentId: string;
+  maxMarks: number;
+  questions?: Question[];
+}) {
   // This component only mounts after the assignment has loaded in the browser, so reading the stored name
   // here cannot disagree with the server-rendered page.
   const [name, setName] = useState(readStoredName);
@@ -60,6 +70,14 @@ export function StudentSubmitSection({ assignmentId, maxMarks }: { assignmentId:
       cancelled = true;
     };
   }, [assignmentId, shownName, reload]);
+
+  // While a submission is still being read or marked, look again every few seconds.
+  const stillWorking = list.status === "ready" && list.items.some((s) => s.status === "processing");
+  useEffect(() => {
+    if (!stillWorking) return;
+    const timer = setTimeout(() => setReload((n) => n + 1), POLL_MS);
+    return () => clearTimeout(timer);
+  }, [stillWorking, reload]);
 
   function showSubmissionsFor(value: string) {
     const trimmed = value.trim();
@@ -212,7 +230,7 @@ export function StudentSubmitSection({ assignmentId, maxMarks }: { assignmentId:
         {shownName.length >= 2 && list.status === "ready" && list.items.length > 0 && (
           <ul className="space-y-3">
             {list.items.map((s) => (
-              <SubmissionCard key={s.id} submission={s} maxMarks={maxMarks} onRetry={() => handleRetry(s.id)} />
+              <SubmissionCard key={s.id} submission={s} maxMarks={maxMarks} questions={questions} onRetry={() => handleRetry(s.id)} />
             ))}
           </ul>
         )}
@@ -224,10 +242,12 @@ export function StudentSubmitSection({ assignmentId, maxMarks }: { assignmentId:
 function SubmissionCard({
   submission: s,
   maxMarks,
+  questions,
   onRetry,
 }: {
   submission: StudentSubmission;
   maxMarks: number;
+  questions: Question[];
   onRetry: () => void;
 }) {
   const status = STUDENT_STATUS[s.status];
@@ -239,8 +259,8 @@ function SubmissionCard({
       </div>
       <p className="text-xs text-muted">Submitted {new Date(s.createdAt).toLocaleString()}</p>
 
-      {s.status === "processing" && <p className="text-muted">Your file is being read. Refresh the page to check again.</p>}
-      {s.status === "awaiting_review" && <p className="text-muted">Waiting for your teacher to review.</p>}
+      {s.status === "processing" && <p className="text-muted">Your file is being read and checked. This page updates by itself.</p>}
+      {s.status === "awaiting_review" && <p className="text-muted">Waiting for your teacher to review. You will see your marks once they have.</p>}
       {(s.status === "needs_ocr" || s.status === "failed") && s.error && (
         <p role="alert" className="alert-warning">
           {s.error}
@@ -257,6 +277,22 @@ function SubmissionCard({
           <p className="text-base font-semibold">
             Final marks: {s.finalTotal} / {maxMarks}
           </p>
+          {s.scores && s.scores.length > 0 && (
+            <ul className="space-y-0.5 text-muted">
+              {s.scores.map((score) => {
+                const q = questions.find((x) => x.number === score.number);
+                return (
+                  <li key={score.number} className="flex justify-between gap-3">
+                    <span>Question {score.number}</span>
+                    <span className="tabular-nums">
+                      {score.marks}
+                      {q ? ` / ${q.maxMarks}` : ""}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
           {s.feedback && <p className="whitespace-pre-line text-fg">{s.feedback}</p>}
         </div>
       )}

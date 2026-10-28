@@ -20,6 +20,7 @@ const BADGE: Record<DecisionStatus, { label: string; className: string }> = {
 export function OfficialDecision({
   status,
   score,
+  max = 100,
   feedback,
   decidedAt,
   note,
@@ -27,6 +28,8 @@ export function OfficialDecision({
 }: {
   status: DecisionStatus;
   score: number | null;
+  /** What the score is out of; weekly reviews use 100, assignments use their total marks. */
+  max?: number;
   feedback?: string | null;
   decidedAt?: string | null;
   /** A line under the score, such as what the AI suggested. */
@@ -54,9 +57,9 @@ export function OfficialDecision({
             {pending ? "No official score yet." : "No official score was given for this week."}
           </p>
         ) : (
-          <p className="mt-1 flex items-baseline gap-1.5" aria-label={`Official score ${score} out of 100`}>
+          <p className="mt-1 flex items-baseline gap-1.5" aria-label={`Official score ${score} out of ${max}`}>
             <span className="text-5xl font-bold tabular-nums tracking-tight text-official-fg">{score}</span>
-            <span className="text-xl font-medium text-official-ink">/100</span>
+            <span className="text-xl font-medium text-official-ink">/{max}</span>
           </p>
         )}
         {note && <p className="mt-1 text-official-ink">{note}</p>}

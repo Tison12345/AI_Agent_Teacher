@@ -2,28 +2,37 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { fetchFacultySubmission } from "@/lib/api/client";
+import { fetchFacultyAssignment, fetchFacultySubmission, runAiMarking } from "@/lib/api/client";
+import type { FacultyAssignment, Question } from "@/lib/schemas/assignment";
 import type { FacultySubmission } from "@/lib/schemas/submission";
 import { OpenAccessNotice } from "./AssignmentParts";
 import { FACULTY_STATUS } from "./submission-labels";
+import { AiRecommendation, DecisionPanel, OfficialResult } from "./SubmissionReview";
 import { Disclosure } from "./ui";
 
 type Load =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "missing" }
-  | { status: "ready"; submission: FacultySubmission };
+  | { status: "ready"; submission: FacultySubmission; assignment: FacultyAssignment };
 
-/** Faculty: one submission with the original file link and the text that was read from it. */
+/** Faculty: one submission with the file, the text read from it, the AI recommendation and the official decision. */
 export function FacultySubmissionDetail({ id }: { id: string }) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    fetchFacultySubmission(id).then(
-      (submission) => {
-        if (!cancelled) setLoad(submission ? { status: "ready", submission } : { status: "missing" });
+    fetchFacultySubmission(id)
+      .then(async (submission) => {
+        if (!submission) return null;
+        const assignment = await fetchFacultyAssignment(submission.assignmentId);
+        if (!assignment) throw new Error("The assignment for this submission could not be found.");
+        return { submission, assignment };
+      })
+      .then(
+      (found) => {
+        if (!cancelled) setLoad(found ? { status: "ready", ...found } : { status: "missing" });
       },
       (error: unknown) => {
         if (!cancelled) setLoad({ status: "error", message: error instanceof Error ? error.message : "Could not load the submission." });
@@ -67,12 +76,29 @@ export function FacultySubmissionDetail({ id }: { id: string }) {
           </button>
         </div>
       )}
-      {load.status === "ready" && <Detail submission={load.submission} />}
+      {load.status === "ready" && (
+        <Detail
+          submission={load.submission}
+          questions={load.assignment.questions}
+          maxMarks={load.assignment.maxMarks}
+          onChange={(submission) => setLoad({ ...load, submission })}
+        />
+      )}
     </div>
   );
 }
 
-function Detail({ submission: s }: { submission: FacultySubmission }) {
+function Detail({
+  submission: s,
+  questions,
+  maxMarks,
+  onChange,
+}: {
+  submission: FacultySubmission;
+  questions: Question[];
+  maxMarks: number;
+  onChange: (submission: FacultySubmission) => void;
+}) {
   const status = FACULTY_STATUS[s.status];
   const totalChars = s.extraction?.pages.reduce((sum, p) => sum + p.chars, 0) ?? 0;
   return (
@@ -143,14 +169,62 @@ function Detail({ submission: s }: { submission: FacultySubmission }) {
         )}
       </section>
 
-      <section aria-labelledby="ai-heading" className="card space-y-1 p-6">
-        <h2 id="ai-heading" className="text-lg font-semibold">
-          AI recommendation
-        </h2>
-        <p className="text-sm text-muted">
-          {s.aiTotal === null ? "No AI marking has been done for this submission yet." : `The AI recommends ${s.aiTotal} marks. It is not official.`}
-        </p>
-      </section>
+      {s.decision && <OfficialResult submission={s} questions={questions} maxMarks={maxMarks} />}
+
+      {s.aiResult ? (
+        <AiRecommendation submission={s} questions={questions} maxMarks={maxMarks} />
+      ) : (
+        <MarkingPrompt submission={s} onMarked={onChange} />
+      )}
+
+      {s.status === "awaiting_review" && !s.decision && (
+        <DecisionPanel key={s.id} submission={s} questions={questions} maxMarks={maxMarks} onDecided={onChange} />
+      )}
     </>
+  );
+}
+
+/** Where the AI recommendation will appear. Offers to run the marking when it has not happened yet. */
+function MarkingPrompt({ submission: s, onMarked }: { submission: FacultySubmission; onMarked: (submission: FacultySubmission) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const canRun = s.status === "processing" && s.hasText;
+
+  async function run() {
+    if (busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await runAiMarking(s.id);
+      if (result.ok) onMarked(result.submission);
+      else setMessage(result.message);
+    } catch {
+      setMessage("Could not reach the server. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby="ai-heading" className="card space-y-3 p-6">
+      <h2 id="ai-heading" className="text-lg font-semibold">
+        AI recommendation
+      </h2>
+      <p className="text-sm text-muted">
+        {canRun
+          ? "The text has been read. The AI marks it automatically after the upload; if it has not finished, you can run it now. It only gives a recommendation."
+          : "No AI marking has been done for this submission."}
+      </p>
+      {canRun && (
+        <button type="button" onClick={run} disabled={busy} className="btn-primary btn-sm">
+          {busy ? "Marking… this can take up to a minute" : "Run AI marking"}
+        </button>
+      )}
+      {message && (
+        <p role="alert" className="alert-danger">
+          {message}
+        </p>
+      )}
+    </section>
   );
 }

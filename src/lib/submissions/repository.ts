@@ -2,7 +2,9 @@ import "server-only";
 import { z } from "zod";
 import { getSupabase } from "@/lib/db/supabase";
 import { RepositoryError } from "@/lib/projects/repository";
+import { toDecisionRecord } from "@/lib/grading/repository";
 import {
+  AiResultSchema,
   ExtractionInfoSchema,
   FacultySubmissionSchema,
   FacultySubmissionSummarySchema,
@@ -132,20 +134,39 @@ export async function listFacultySubmissions(assignmentId: string): Promise<Facu
 export async function getFacultySubmission(id: string): Promise<FacultySubmission | null> {
   const { data, error } = await getSupabase()
     .from("submissions")
-    .select(`${FACULTY_COLUMNS}, file_path, extraction`)
+    .select(`${FACULTY_COLUMNS}, file_path, extraction, ai_result, ai_model`)
     .eq("id", id)
     .maybeSingle();
   if (error) throw new RepositoryError("db_error", error.message);
   if (!data) return null;
 
-  const row = data as unknown as { file_path: string; extraction: unknown; extracted_text: string | null };
+  const row = data as unknown as {
+    file_path: string;
+    extraction: unknown;
+    extracted_text: string | null;
+    ai_result: unknown;
+    ai_model: string | null;
+  };
   const extraction = ExtractionInfoSchema.nullable().safeParse(row.extraction ?? null);
+  const aiResult = AiResultSchema.nullable().safeParse(row.ai_result ?? null);
+  if (!aiResult.success) throw new RepositoryError("invalid_data", "Stored AI result failed validation.");
+
+  const { data: decisionRow, error: decisionError } = await getSupabase()
+    .from("submission_decisions")
+    .select("decision, scores, final_total, feedback, comment, decided_at")
+    .eq("submission_id", id)
+    .maybeSingle();
+  if (decisionError) throw new RepositoryError("db_error", decisionError.message);
+
   const signed = await getSupabase().storage.from(BUCKET).createSignedUrl(row.file_path, DOWNLOAD_LINK_SECONDS);
   return FacultySubmissionSchema.parse({
     ...toFacultySummary(data),
     extractedText: row.extracted_text,
     extraction: extraction.success ? extraction.data : null,
     downloadUrl: signed.error ? null : signed.data.signedUrl,
+    aiResult: aiResult.data,
+    aiModel: row.ai_model,
+    decision: decisionRow ? toDecisionRecord(decisionRow) : null,
   });
 }
 

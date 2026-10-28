@@ -9,6 +9,9 @@ const api = vi.hoisted(() => ({
   retryProcessing: vi.fn(),
   fetchFacultySubmissions: vi.fn(),
   fetchFacultySubmission: vi.fn(),
+  fetchFacultyAssignment: vi.fn(),
+  runAiMarking: vi.fn(),
+  decideSubmission: vi.fn(),
 }));
 vi.mock("@/lib/api/client", () => api);
 
@@ -229,7 +232,24 @@ describe("FacultySubmissionDetail", () => {
     extractedText: "Page 1:\nA loop repeats code.",
     extraction: { pages: [{ number: 1, chars: 600 }], warnings: ["Page 2 has no readable text (it may be a scan or an image)."] },
     downloadUrl: "https://example.test/signed",
+    aiResult: null,
+    aiModel: null,
+    decision: null,
     ...over,
+  });
+
+  beforeEach(() => {
+    api.fetchFacultyAssignment.mockResolvedValue({
+      id: A,
+      title: "Loops",
+      instructions: "Answer all.",
+      questions: [{ number: 1, text: "What is a loop?", maxMarks: 5, rubric: "Repetition." }],
+      maxMarks: 5,
+      createdAt: "2026-10-27T10:00:00+00:00",
+      submissionCount: 1,
+      hasReferenceAnswers: false,
+      referenceAnswers: null,
+    });
   });
 
   it("shows the original file link, reading warnings, and the extracted text collapsed by default", async () => {
@@ -246,7 +266,7 @@ describe("FacultySubmissionDetail", () => {
     expect(screen.getByText(/A loop repeats code/)).not.toBeVisible();
     await user.click(screen.getByRole("button", { name: "Show the extracted text" }));
     expect(screen.getByText(/A loop repeats code/)).toBeVisible();
-    expect(screen.getByText("No AI marking has been done for this submission yet.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run AI marking" })).toBeInTheDocument(); // text read, not marked yet
   });
 
   it("says plainly when no text was read, and shows the failure reason", async () => {
@@ -257,6 +277,34 @@ describe("FacultySubmissionDetail", () => {
     expect(await screen.findByText("No text has been read from this file.")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("The text-reading service is not running.");
     expect(screen.getByText("The original file link could not be created.")).toBeInTheDocument();
+  });
+
+  it("a student sees per-question marks and feedback only once the teacher has approved", async () => {
+    const questions = [
+      { number: 1, text: "What is a loop?", maxMarks: 5, rubric: "r" },
+      { number: 2, text: "What is an array?", maxMarks: 2.5, rubric: "r" },
+    ];
+    api.fetchMySubmissions.mockResolvedValue([
+      mine({ id: "aaaaaaaa-e89b-42d3-a456-426614174000", status: "awaiting_review", fileName: "waiting.pdf" }),
+      mine({
+        status: "approved",
+        fileName: "done.pdf",
+        scores: [{ number: 1, marks: 4 }, { number: 2, marks: 2 }],
+        finalTotal: 6,
+        feedback: "Good start.",
+        decidedAt: "2026-10-28T11:00:00+00:00",
+      }),
+    ]);
+    window.localStorage.setItem("coLearning.studentName", "Asha Fictional");
+    render(<StudentSubmitSection assignmentId={A} maxMarks={7.5} questions={questions} />);
+    expect(await screen.findByText("Final marks: 6 / 7.5")).toBeInTheDocument();
+    expect(screen.getByText("Question 1")).toBeInTheDocument();
+    expect(screen.getByText("4 / 5")).toBeInTheDocument();
+    expect(screen.getByText("2 / 2.5")).toBeInTheDocument();
+    expect(screen.getByText("Good start.")).toBeInTheDocument();
+    // The submission still waiting for the teacher shows no marks at all.
+    expect(screen.getAllByText(/Final marks/)).toHaveLength(1);
+    expect(screen.getByText(/Waiting for your teacher to review/)).toBeInTheDocument();
   });
 
   it("says when the submission does not exist", async () => {

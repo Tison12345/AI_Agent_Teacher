@@ -70,7 +70,7 @@ const HEDGES =
   /\b(whether|if|unclear|unknown|cannot|can't|could not|couldn't|not (known|shown|clear|possible)|no (way|evidence|information)|nothing (shows|confirms|indicates)|unable|should|needs? to|must|before|until|would)\b/i;
 
 /** True if any clause flatly claims the code was run, built or tested. */
-function claimsExecution(value: string): boolean {
+export function claimsExecution(value: string): boolean {
   return value
     .split(/[.;!?\n]|,|\bbut\b/i)
     .some((clause) => EXECUTION_CLAIMS.some((re) => re.test(clause)) && !HEDGES.test(clause));
