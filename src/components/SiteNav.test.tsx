@@ -18,7 +18,9 @@ describe("SiteNav", () => {
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Student Dashboard" })).toHaveAttribute("href", "/student");
     expect(screen.getByRole("link", { name: "Faculty Dashboard" })).toHaveAttribute("href", "/faculty");
-    expect(main.querySelectorAll("svg[aria-hidden='true']").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByRole("link", { name: "Student Assignments" })).toHaveAttribute("href", "/student/assignments");
+    expect(screen.getByRole("link", { name: "Faculty Assignments" })).toHaveAttribute("href", "/faculty/assignments");
+    expect(main.querySelectorAll("svg[aria-hidden='true']").length).toBeGreaterThanOrEqual(5);
   });
 
   it.each([
@@ -28,6 +30,10 @@ describe("SiteNav", () => {
     ["/faculty", "Faculty Dashboard"],
     ["/faculty/evaluations/abc", "Faculty Dashboard"],
     ["/faculty/projects/abc", "Faculty Dashboard"],
+    ["/student/assignments", "Student Assignments"],
+    ["/student/assignments/abc", "Student Assignments"],
+    ["/faculty/assignments", "Faculty Assignments"],
+    ["/faculty/assignments/abc", "Faculty Assignments"],
   ])("on %s the current page is %s, and only that one", (pathname, current) => {
     nav.pathname = pathname;
     render(<SiteNav />);

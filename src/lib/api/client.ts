@@ -2,6 +2,15 @@ import { z } from "zod";
 import type { ProjectSubmitResult } from "@/components/ProjectForm";
 import { ProjectSchema, type Project } from "@/lib/schemas/project";
 import {
+  FacultyAssignmentSchema,
+  FacultyAssignmentSummarySchema,
+  StudentAssignmentSchema,
+  type FacultyAssignment,
+  type FacultyAssignmentSummary,
+  type StudentAssignment,
+} from "@/lib/schemas/assignment";
+import { unflattenErrors, type AssignmentFormErrors, type AssignmentInput } from "@/lib/validation/assignment";
+import {
   BaselineSchema,
   CheckpointSchema,
   ProgressSchema,
@@ -301,4 +310,59 @@ export async function sendDecision(evaluationId: string, request: DecisionReques
   return parsed.success
     ? { ok: false, message: parsed.data.error.message, fields: parsed.data.error.fields }
     : { ok: false, message: `Request failed (${res.status}).` };
+}
+
+// ---- Assignments (demo build: no login) -------------------------------------------------
+
+export type AssignmentSubmitResult =
+  | { ok: true }
+  | { ok: false; message: string; errors?: AssignmentFormErrors };
+
+/** Student-safe: no reference answers. */
+export async function fetchStudentAssignments(): Promise<StudentAssignment[]> {
+  const res = await fetch("/api/assignments", { cache: "no-store" });
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ assignments: z.array(StudentAssignmentSchema) }).parse(await res.json()).assignments;
+}
+
+export async function fetchStudentAssignment(id: string): Promise<StudentAssignment | null> {
+  const res = await fetch(`/api/assignments/${encodeURIComponent(id)}`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ assignment: StudentAssignmentSchema }).parse(await res.json()).assignment;
+}
+
+export async function fetchFacultyAssignments(): Promise<FacultyAssignmentSummary[]> {
+  const res = await fetch("/api/faculty/assignments", { cache: "no-store" });
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ assignments: z.array(FacultyAssignmentSummarySchema) }).parse(await res.json()).assignments;
+}
+
+export async function fetchFacultyAssignment(id: string): Promise<FacultyAssignment | null> {
+  const res = await fetch(`/api/faculty/assignments/${encodeURIComponent(id)}`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ assignment: FacultyAssignmentSchema }).parse(await res.json()).assignment;
+}
+
+export async function createAssignment(
+  input: AssignmentInput,
+): Promise<{ result: AssignmentSubmitResult; assignment?: FacultyAssignment }> {
+  const res = await fetch("/api/faculty/assignments", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (res.ok) {
+    const { assignment } = z.object({ assignment: FacultyAssignmentSchema }).parse(await res.json());
+    return { result: { ok: true }, assignment };
+  }
+  const parsed = ErrorBodySchema.safeParse(await res.json().catch(() => null));
+  return {
+    result: {
+      ok: false,
+      message: parsed.success ? parsed.data.error.message : `Request failed (${res.status}).`,
+      errors: parsed.success && parsed.data.error.fields ? unflattenErrors(parsed.data.error.fields) : undefined,
+    },
+  };
 }

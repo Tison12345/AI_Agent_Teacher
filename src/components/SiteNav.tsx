@@ -8,12 +8,18 @@ import { Icon, type IconName } from "@/components/ui";
 const links: { href: string; label: string; icon: IconName }[] = [
   { href: "/", label: "Home", icon: "home" },
   { href: "/student", label: "Student Dashboard", icon: "student" },
+  { href: "/student/assignments", label: "Student Assignments", icon: "doc" },
   { href: "/faculty", label: "Faculty Dashboard", icon: "faculty" },
+  { href: "/faculty/assignments", label: "Faculty Assignments", icon: "doc" },
 ];
 
-/** The current page's section: "/" only matches itself, the others also match their sub-pages. */
-function isActive(pathname: string, href: string): boolean {
-  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+/**
+ * The current page's section. "/" only matches itself; the others also match their sub-pages, and the most
+ * specific link wins, so /student/assignments marks "Student Assignments" and not "Student Dashboard".
+ */
+function activeHref(pathname: string): string | null {
+  const matches = links.filter((l) => (l.href === "/" ? pathname === "/" : pathname === l.href || pathname.startsWith(`${l.href}/`)));
+  return matches.sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
 }
 
 /** The navigation markup. `pathname` is null before the current page is known (no item is marked active). */
@@ -37,7 +43,7 @@ function NavShell({ pathname }: { pathname: string | null }) {
 
         <ul className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
           {links.map((link) => {
-            const active = pathname !== null && isActive(pathname, link.href);
+            const active = pathname !== null && link.href === activeHref(pathname);
             return (
               <li key={link.href} className="shrink-0">
                 <Link

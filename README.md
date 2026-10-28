@@ -57,6 +57,7 @@ Run the files in `supabase/migrations/` **in order**, once each, in the Supabase
 | `0005_teacher_decisions.sql` | `teacher_decisions`, `decide_evaluation()` (atomic, final) |
 | `0006_variable_duration.sql` | Project length 1 to 16 weeks (replaces the fixed 12) |
 | `0007_quizzes.sql` | `quizzes` (one per checkpoint), `quiz_attempts` (one per quiz); both immutable |
+| `0008_assignments.sql` | AI assignment evaluation (demo): `assignments`, `submissions`, `submission_decisions`, the `decide_submission()` function, the student-safe views `student_assignments` / `student_submissions`, and a private `submissions` storage bucket |
 
 All tables have row-level security enabled with no access for `anon`/`authenticated`; only the server's secret key can read or write.
 
@@ -87,6 +88,8 @@ Live tests are in `*.live.test.ts` and are excluded from `npm test`. Each create
 | `/student`, `/student/projects/[id]` | Students | Create projects, plan, repository check, weekly progress, official results |
 | `/faculty`, `/faculty/evaluations/[id]` | Teachers | Dashboard (one dropdown per project, a card per week with score and quiz tag), evidence, decision form |
 | `/faculty/projects/[id]` | Teachers | Project overview: every week with scores, feedback, AI findings and quiz result |
+| `/student/assignments`, `/student/assignments/[id]` | Students | Assignments with instructions, questions and rubric (demo, in progress) |
+| `/faculty/assignments`, `/faculty/assignments/[id]` | Teachers | Create assignments, see submission counts (demo, in progress) |
 | `GET/POST /api/projects`, `GET /api/projects/[id]` | Students | |
 | `GET/POST /api/projects/[id]/plan` | Students | POST calls Gemini once |
 | `GET /api/projects/[id]/repo`, `/repo/compare` | Students | GitHub reads |
@@ -94,6 +97,8 @@ Live tests are in `*.live.test.ts` and are excluded from `npm test`. Each create
 | `POST …/weeks/[week]/evaluate` | Students | Returns status only; calls GitHub and Gemini |
 | `GET/POST …/weeks/[week]/quiz`, `POST …/weeks/[week]/quiz/attempt` | Students | GET: the quiz without answers. POST: creates it once (calls GitHub and Gemini). `attempt`: graded on the server, one attempt |
 | `GET /api/projects/[id]/results` | Students | Official results only |
+| `GET /api/assignments`, `GET /api/assignments/[id]` | Students | Assignments without reference answers (read from a database view that has no such column) |
+| `GET/POST /api/faculty/assignments`, `GET /api/faculty/assignments/[id]` | Teachers | Create assignments; carry reference answers |
 | `GET /api/faculty/projects/[id]` | Teachers | One project with every week; carries the AI score and your private comments |
 | `GET /api/faculty/evaluations/[id]/quiz` | Teachers | The student's quiz result for that week; answers withheld until the student has attempted it |
 | `GET /api/faculty/evaluations[?status=…]`, `GET …/[id]`, `POST …/[id]/decision` | Teachers | Carry the AI score and the diff |
@@ -127,11 +132,17 @@ The interface is a dark theme built from a small set of tokens in `src/app/globa
 9. **The quiz is only as good as the questions.** Gemini writes them from changed lines it can see, and has not run the code. There is no check that a question is actually answerable from the diff beyond the format rules, no way for a teacher to edit or remove a question, and one attempt means a student who closes the page mid-quiz cannot continue it. A week with no readable code (only images, generated or deleted files) gets no quiz. Without login, anyone with the project link can take or submit a student's quiz.
 10. **Not checked:** the app has not been deployed or load-tested, and the pages have not been audited with browser accessibility tooling (see the final report for what was and was not checked).
 
+## AI assignment evaluation (demo, built in phases)
+
+A small, separate feature for a college demonstration: faculty create assignments (questions, marks, rubric, optional reference answers); students upload a PDF or DOCX; the answer is graded per question by Gemini as a *recommendation*; faculty review and approve before a student sees any mark. **Phase A (this commit) covers the schema, assignment creation and the student/faculty assignment pages.** Uploads, text extraction and AI marking come in later phases.
+
+Demo limits, on purpose: **no login** (anyone can open the faculty routes and create or approve), students are identified only by a typed name, scanned documents are not supported (they will be reported as needing OCR), and the data in the demo is fictional.
+
 ## Deployment notes
 
 - Any Node host for Next.js 16 works (e.g. Vercel). Set the four server variables in the host's environment settings, not in the repository.
 - Plan generation and evaluation can take up to ~60 seconds (`maxDuration = 60` on those routes). Choose a plan that allows functions that long.
-- Run all seven migrations on the production Supabase project before first use.
+- Run all eight migrations on the production Supabase project before first use.
 - Quiz creation takes up to ~60 seconds like evaluation (`maxDuration = 60`), and uses one more Gemini call per week.
 - **Do not expose a deployment publicly until authentication exists** (limitation 1).
 - Rotate any key that has ever been pasted into a chat, ticket or commit.
