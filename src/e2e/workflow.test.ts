@@ -1,6 +1,7 @@
 // End-to-end workflow: student creates a project and submits weeks, the AI evaluates,
 // a teacher decides, the student sees the official result. The real route handlers run
-// against in-memory stores; only GitHub, Gemini and the database are replaced.
+// against in-memory stores; only GitHub, Gemini and the database are replaced. The evaluation runs
+// through the real LangGraph graph (on an in-memory checkpointer instead of Postgres).
 import { ApiError } from "@google/genai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GitHubError } from "@/lib/github/errors";
@@ -26,7 +27,30 @@ const state = vi.hoisted(() => ({
   evaluations: undefined as unknown,
   review: undefined as unknown,
   quizzes: undefined as unknown,
+  /** The evaluation workflow runner for the current test, and the runs it was asked to start. */
+  runner: undefined as undefined | { start(target: never): Promise<unknown>; progress(key: string): Promise<unknown>; resumeAfterDecision(key: string): Promise<void> },
+  runs: [] as Promise<unknown>[],
 }));
+
+// The real evaluation graph, with the (mocked) stores, GitHub and Gemini below, and a memory checkpointer. The
+// background start is kept so a test can wait for the run to end.
+vi.mock("@/lib/workflow/evaluation", async () => {
+  const { MemorySaver } = await import("@langchain/langgraph");
+  const { buildEvaluationGraph } = await import("@/lib/workflow/evaluation/graph");
+  const { defaultEvaluationGraphDeps } = await import("@/lib/workflow/evaluation/repository");
+  const { createEvaluationRunner } = await import("@/lib/workflow/evaluation/runner");
+  return {
+    getEvaluationRunner: () =>
+      (state.runner ??= createEvaluationRunner({
+        graph: buildEvaluationGraph(defaultEvaluationGraphDeps(), new MemorySaver()),
+        leases: { claim: async () => true, renew: async () => true, release: async () => true },
+        sleep: async () => {},
+      }) as never),
+    startEvaluationInBackground: (runner: { start(target: never): Promise<unknown> }, target: never) => {
+      state.runs.push(runner.start(target).catch(() => {}));
+    },
+  };
+});
 
 vi.mock("@/lib/db/supabase", () => ({ StorageConfigError: class extends Error {} }));
 vi.mock("@/lib/projects/repository", () => ({
@@ -127,6 +151,7 @@ import { POST as generatePlan } from "@/app/api/projects/[id]/plan/route";
 import { POST as recordBaseline } from "@/app/api/projects/[id]/baseline/route";
 import { POST as completeWeek } from "@/app/api/projects/[id]/weeks/[week]/complete/route";
 import { POST as evaluate } from "@/app/api/projects/[id]/weeks/[week]/evaluate/route";
+import { GET as getWorkflow } from "@/app/api/projects/[id]/weeks/[week]/workflow/route";
 import { GET as getProgress } from "@/app/api/projects/[id]/progress/route";
 import { GET as getResults } from "@/app/api/projects/[id]/results/route";
 import { GET as getQueue } from "@/app/api/faculty/evaluations/route";
@@ -195,6 +220,24 @@ async function startProject(durationWeeks?: number): Promise<string> {
   return id;
 }
 
+/** Starts the evaluation, waits for the background run to end, and returns the start response. */
+async function startEvaluation(id: string, n: number): Promise<Response> {
+  const res = await evaluate(req(json()), weekCtx(id, n));
+  await Promise.all(state.runs.splice(0));
+  return res;
+}
+
+/** The student-safe progress of a week's evaluation workflow. */
+async function workflowOf(id: string, n: number): Promise<{ state: string; failure: { code: string; message: string } | null; steps: { id: string; status: string }[]; run: number }> {
+  return (await body(await getWorkflow(req(), weekCtx(id, n)))).progress;
+}
+
+/** An evaluation that was started, ran and now waits for the teacher. */
+async function evaluateOk(id: string, n: number): Promise<void> {
+  expect((await startEvaluation(id, n)).status).toBe(202);
+  expect((await workflowOf(id, n)).state).toBe("waiting_faculty");
+}
+
 async function submitWeek(id: string, n: number, head: string) {
   state.head = head;
   return completeWeek(req(json()), weekCtx(id, n));
@@ -207,6 +250,8 @@ beforeEach(() => {
   state.geminiScript = [];
   state.geminiCalls = [];
   state.projects = [];
+  state.runner = undefined;
+  state.runs = [];
   state.plans.clear();
   const checkpoints = state.checkpoints as ReturnType<typeof memoryStore>;
   checkpoints.checkpoints.length = 0;
@@ -227,11 +272,23 @@ describe("student to teacher workflow", () => {
     const recorded = await submitWeek(id, 1, sha("1"));
     expect(recorded.status).toBe(201);
     state.geminiScript.push(evaluation());
-    const evaluated = await evaluate(req(json()), weekCtx(id, 1));
-    expect(evaluated.status).toBe(201);
-    const evaluatedBody = await body(evaluated);
-    expect(evaluatedBody.evaluation.status).toBe("pending_review");
-    expect(JSON.stringify(evaluatedBody)).not.toMatch(/score|suggested|80/i); // the student is not told the AI's number
+    const evaluated = await startEvaluation(id, 1);
+    expect(evaluated.status).toBe(202);
+    expect(JSON.stringify(await body(evaluated))).not.toMatch(/score|suggested|80/i); // the student is not told the AI's number
+
+    // The workflow ran to the teacher's review. The student can see the steps, never the AI's output.
+    const waiting = await workflowOf(id, 1);
+    expect(waiting.state).toBe("waiting_faculty");
+    expect(waiting.steps.map((step) => [step.id, step.status])).toEqual([
+      ["load_context", "done"],
+      ["fetch_diff", "done"],
+      ["generate", "done"],
+      ["check_evaluation", "done"],
+      ["save_evaluation", "done"],
+      ["await_faculty", "waiting"],
+      ["finish", "pending"],
+    ]);
+    expect(JSON.stringify(waiting)).not.toMatch(/score|suggested|addBook|Readable|80/i);
 
     // The student's own view: status only, and no official result yet.
     const progress = await body(await getProgress(req(), proj(id)));
@@ -255,6 +312,7 @@ describe("student to teacher workflow", () => {
       proj(evaluationId),
     );
     expect(decided.status).toBe(201);
+    expect((await workflowOf(id, 1)).state).toBe("complete"); // the decision woke the paused workflow
 
     // The decision is final.
     const again = await decide(req(json({ decision: "approve" })), proj(evaluationId));
@@ -278,7 +336,7 @@ describe("student to teacher workflow", () => {
     const id = await startProject();
     await submitWeek(id, 1, sha("1"));
     state.geminiScript.push(evaluation());
-    expect((await evaluate(req(json()), weekCtx(id, 1))).status).toBe(201);
+    await evaluateOk(id, 1);
 
     // No quiz exists until the student asks for one; the quiz is made from the code changes.
     expect(await body(await getQuiz(req(), weekCtx(id, 1)))).toEqual({ quiz: null });
@@ -320,7 +378,7 @@ describe("student to teacher workflow", () => {
     const id = await startProject();
     await submitWeek(id, 1, sha("1"));
     state.geminiScript.push(evaluation({ incompleteRequirements: ["Removing a book"] }));
-    expect((await evaluate(req(json()), weekCtx(id, 1))).status).toBe(201);
+    await evaluateOk(id, 1);
 
     // Skipping ahead is not allowed.
     expect((await submitWeek(id, 3, sha("2"))).status).toBe(409);
@@ -329,7 +387,7 @@ describe("student to teacher workflow", () => {
     const week2 = (await body(await getProgress(req(), proj(id)))).checkpoints.find((c: { weekNumber: number }) => c.weekNumber === 2);
     expect(week2).toMatchObject({ commitSha: sha("2"), baseCommitSha: sha("1") });
     state.geminiScript.push(evaluation());
-    expect((await evaluate(req(json()), weekCtx(id, 2))).status).toBe(201);
+    await evaluateOk(id, 2);
     const prompt = state.geminiCalls.at(-1)!.contents;
     expect(prompt).toContain("previousWeek");
     expect(prompt).toContain("Removing a book");
@@ -339,7 +397,7 @@ describe("student to teacher workflow", () => {
     const id = await startProject();
     await submitWeek(id, 1, sha("1"));
     state.geminiScript.push(evaluation());
-    await evaluate(req(json()), weekCtx(id, 1));
+    await evaluateOk(id, 1);
     const evaluationId = (await body(await getQueue(req()))).evaluations[0].evaluationId;
     expect((await decide(req(json({ decision: "reject", comment: "The AI could not see the main files." })), proj(evaluationId))).status).toBe(201);
     const results = await body(await getResults(req(), proj(id)));
@@ -389,29 +447,32 @@ describe("failures across GitHub and Gemini", () => {
   }
   const evaluationRows = () => (state.evaluations as ReturnType<typeof memoryEvaluationStore>).rows;
 
-  it("Gemini unavailable: the week stays recorded, nothing is stored, and a retry works", async () => {
+  it("Gemini unavailable: tried once more, then the run stops, nothing is stored, and a retry works", async () => {
     const id = await weekOneRecorded();
-    state.geminiScript.push(new ApiError({ message: "overloaded", status: 503 }));
-    const failed = await evaluate(req(json()), weekCtx(id, 1));
-    expect(failed.status).toBe(502);
-    expect((await body(failed)).error.code).toBe("gemini_unavailable");
+    state.geminiScript.push(new ApiError({ message: "overloaded", status: 503 }), new ApiError({ message: "overloaded", status: 503 }));
+    expect((await startEvaluation(id, 1)).status).toBe(202);
+    const failed = await workflowOf(id, 1);
+    expect(failed).toMatchObject({ state: "failed", failure: { code: "ai_unavailable" }, run: 1 });
+    expect(failed.steps.find((step) => step.id === "generate")?.status).toBe("failed");
+    expect(state.geminiCalls.filter((c) => c.contents.includes("<review_input>"))).toHaveLength(2); // one try and one retry
     expect(evaluationRows()).toHaveLength(0);
     expect((await body(await getProgress(req(), proj(id)))).checkpoints).toHaveLength(1);
 
     state.geminiScript.push(evaluation());
-    expect((await evaluate(req(json()), weekCtx(id, 1))).status).toBe(201);
+    await evaluateOk(id, 1);
     expect(evaluationRows()).toHaveLength(1);
+    expect((await workflowOf(id, 1)).run).toBe(2); // the retry is a new run on the same thread
   });
 
-  it("Gemini daily quota: a clear message that does not say to wait a minute", async () => {
+  it("Gemini daily quota: not tried again, with a clear message that does not say to wait a minute", async () => {
     const id = await weekOneRecorded();
     state.geminiScript.push(new ApiError({ message: "Quota exceeded: GenerateRequestsPerDayPerProjectPerModel-FreeTier", status: 429 }));
-    const res = await evaluate(req(json()), weekCtx(id, 1));
-    expect(res.status).toBe(429);
-    const error = (await body(res)).error;
-    expect(error.code).toBe("gemini_quota_exhausted");
-    expect(error.message).toMatch(/tomorrow/);
-    expect(error.message).not.toMatch(/minute/);
+    expect((await startEvaluation(id, 1)).status).toBe(202);
+    const progress = await workflowOf(id, 1);
+    expect(progress).toMatchObject({ state: "failed", failure: { code: "ai_quota" } });
+    expect(progress.failure?.message).toMatch(/tomorrow/);
+    expect(progress.failure?.message).not.toMatch(/minute/);
+    expect(state.geminiCalls.filter((c) => c.contents.includes("<review_input>"))).toHaveLength(1);
     expect(evaluationRows()).toHaveLength(0);
   });
 
@@ -424,9 +485,10 @@ describe("failures across GitHub and Gemini", () => {
       ],
     });
     state.geminiScript.push(bad, bad);
-    const res = await evaluate(req(json()), weekCtx(id, 1));
-    expect(res.status).toBe(502);
-    expect((await body(res)).error.code).toBe("gemini_invalid_response");
+    expect((await startEvaluation(id, 1)).status).toBe(202);
+    const progress = await workflowOf(id, 1);
+    expect(progress).toMatchObject({ state: "failed", failure: { code: "ai_invalid" } });
+    expect(JSON.stringify(progress)).not.toMatch(/ran the app|tests? pass/i);
     expect(evaluationRows()).toHaveLength(0);
   });
 
@@ -443,8 +505,8 @@ describe("failures across GitHub and Gemini", () => {
   it("GitHub failing during evaluation: reported, nothing stored, Gemini never called", async () => {
     const id = await weekOneRecorded();
     state.githubError = new GitHubError("unavailable");
-    const res = await evaluate(req(json()), weekCtx(id, 1));
-    expect(res.status).toBe(502);
+    expect((await startEvaluation(id, 1)).status).toBe(202);
+    expect(await workflowOf(id, 1)).toMatchObject({ state: "failed", failure: { code: "github_failed" } });
     expect(state.geminiCalls.filter((c) => c.contents.includes("<review_input>"))).toHaveLength(0);
     expect(evaluationRows()).toHaveLength(0);
   });
@@ -454,7 +516,7 @@ describe("failures across GitHub and Gemini", () => {
     expect((await evaluate(req(json()), weekCtx(id, 1))).status).toBe(409);
     await submitWeek(id, 1, sha("1"));
     state.geminiScript.push(evaluation());
-    expect((await evaluate(req(json()), weekCtx(id, 1))).status).toBe(201);
+    await evaluateOk(id, 1);
     const second = await evaluate(req(json()), weekCtx(id, 1));
     expect(second.status).toBe(409);
     expect(JSON.stringify(await body(second))).not.toMatch(/suggested|80/);

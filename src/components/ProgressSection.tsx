@@ -13,6 +13,7 @@ import type { Checkpoint, Progress } from "@/lib/schemas/checkpoint";
 import type { StudentResult } from "@/lib/schemas/review";
 import { OfficialDecision } from "./OfficialDecision";
 import { QuizPanel } from "./QuizPanel";
+import { EvaluationWorkflowProgress } from "./WorkflowProgress";
 import { summarizeProject } from "@/lib/dashboard/summary";
 import { Icon, ProgressBar, ScoreCard, StatCard, WeekScoreBars } from "./ui";
 
@@ -30,6 +31,7 @@ export function ProgressSection({ projectId, durationWeeks }: { projectId: strin
   const [busy, setBusy] = useState<"baseline" | number | null>(null);
   const [confirmWeek, setConfirmWeek] = useState<number | null>(null);
   const [evaluating, setEvaluating] = useState<number | null>(null);
+  const [afterRun, setAfterRun] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
   const [results, setResults] = useState<StudentResult[]>([]);
   const [resultsState, setResultsState] = useState<"loading" | "loaded" | "failed">("loading");
@@ -103,20 +105,37 @@ export function ProgressSection({ projectId, durationWeeks }: { projectId: strin
     );
   }
 
-  /** Evaluates a recorded week. Runs right after recording, and again on "Generate evaluation" if it failed. */
+  /**
+   * Starts the evaluation of a recorded week (right after recording, and again on "Generate evaluation" if it
+   * failed). It runs in the background; the progress panel below follows it and reports when it stops.
+   */
   async function runEvaluation(week: number) {
     setEvaluating(week);
     setActionError(null);
     try {
       const result = await requestEvaluation(projectId, week);
-      if (result.ok) setEvaluationStatus(week, result.status);
-      else if (result.status) setEvaluationStatus(week, result.status);
+      if (result.ok) {
+        setAfterRun(result.afterRun);
+        return; // evaluating stays set: the progress panel clears it
+      }
+      if (result.status) setEvaluationStatus(week, result.status);
       else setActionError(result.message);
     } catch {
       setActionError("Could not reach the server for the evaluation. Please try again.");
-    } finally {
-      setEvaluating(null);
     }
+    setEvaluating(null);
+  }
+
+  /** The evaluation workflow reached a state worth showing: waiting for the teacher, finished, or failed. */
+  function handleEvaluationState(week: number, state: string, failure: string | null) {
+    if (state === "waiting_faculty") setEvaluationStatus(week, "pending_review");
+    else if (state === "complete") reload();
+    else if (state === "failed") setActionError(failure ?? "The evaluation could not be completed. Please try again.");
+    else if (state !== "running" && state !== "not_started") {
+      /* skipped: the week already has an evaluation; the next reload shows it */
+      reload();
+    } else return;
+    setEvaluating(null);
   }
 
   async function handleBaseline() {
@@ -281,9 +300,14 @@ export function ProgressSection({ projectId, durationWeeks }: { projectId: strin
                     <OfficialResult result={results.find((r) => r.weekNumber === week)} state={resultsState} />
                   )}
                   {evaluating === week && (
-                    <p role="status" className="mt-2 text-xs text-link">
-                      Evaluating your code changes… this can take up to a minute.
-                    </p>
+                    <div className="mt-3">
+                      <EvaluationWorkflowProgress
+                        projectId={projectId}
+                        weekNumber={week}
+                        afterRun={afterRun}
+                        onStateChange={(state, progress) => handleEvaluationState(week, state, progress.failure?.message ?? null)}
+                      />
+                    </div>
                   )}
 
                   {confirmWeek === week && !checkpoint && (

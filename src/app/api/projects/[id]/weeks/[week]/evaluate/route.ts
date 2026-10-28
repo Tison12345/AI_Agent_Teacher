@@ -2,20 +2,17 @@ import { errorResponse } from "@/lib/api/errors";
 import { checkpointStore } from "@/lib/checkpoints/repository";
 import { evaluationErrorResponse } from "@/lib/evaluation/http";
 import { evaluationStore } from "@/lib/evaluation/repository";
-import { evaluateWeek } from "@/lib/evaluation/service";
-import { getGeminiClient, getGeminiModel } from "@/lib/gemini/client";
-import { getGitHubClient } from "@/lib/github/client";
+import { loadEvaluationContext } from "@/lib/evaluation/service";
+import { getGeminiClient } from "@/lib/gemini/client";
 import { loadProjectRepo } from "@/lib/github/project-repo";
 import { getPlan } from "@/lib/plans/repository";
 import { MAX_DURATION_WEEKS } from "@/lib/validation/project";
-
-// Fetching the diff and asking Gemini can take a while.
-export const maxDuration = 60;
+import { getEvaluationRunner, startEvaluationInBackground } from "@/lib/workflow/evaluation";
 
 /**
- * Creates the AI evaluation for a recorded week and submits it for teacher review.
- * The response deliberately contains no score: the AI's suggestion is for the
- * teacher, and only teacher-approved marks are shown to students.
+ * Starts the AI evaluation of a recorded week; it runs in the background as a workflow and ends waiting for
+ * the teacher's review. The reply is 202 and deliberately contains no score: the AI's suggestion is for the
+ * teacher, and only teacher-approved marks are shown to students. Follow it at .../weeks/[week]/workflow.
  */
 export async function POST(
   _request: Request,
@@ -33,29 +30,25 @@ export async function POST(
       return errorResponse(400, "invalid_week", `This project lasts ${target.durationWeeks} ${target.durationWeeks === 1 ? "week" : "weeks"}, so the week must be from 1 to ${target.durationWeeks}.`);
     }
 
-    // Fail fast, before any GitHub or Gemini work, if Gemini is not configured.
-    const client = getGeminiClient();
-    const { evaluation } = await evaluateWeek(
-      { projectId: id, weekNumber, ...target },
-      {
-        checkpoints: checkpointStore,
-        evaluations: evaluationStore,
-        getPlan,
-        github: getGitHubClient(),
-        gemini: { client, model: getGeminiModel() },
-      },
+    // Fail fast, before any run starts, if Gemini or the workflow database is not set up.
+    getGeminiClient();
+    const runner = getEvaluationRunner();
+
+    // Refuse early, with the same answers as before, when there is nothing to evaluate or it already was.
+    const { checkpoint } = await loadEvaluationContext(
+      { projectId: id, weekNumber },
+      { checkpoints: checkpointStore, evaluations: evaluationStore, getPlan },
     );
-    return Response.json(
-      {
-        evaluation: {
-          id: evaluation.id,
-          weekNumber: evaluation.weekNumber,
-          status: evaluation.status,
-          createdAt: evaluation.createdAt,
-        },
-      },
-      { status: 201 },
-    );
+    // The page that asked follows the new run: it ignores whatever the previous run ended with.
+    const { run: afterRun } = await runner.progress(checkpoint.id);
+    startEvaluationInBackground(runner, {
+      projectId: id,
+      weekNumber,
+      checkpointId: checkpoint.id,
+      owner: target.owner,
+      repo: target.repo,
+    });
+    return Response.json({ workflow: { state: "running", afterRun } }, { status: 202 });
   } catch (error) {
     return evaluationErrorResponse(error);
   }

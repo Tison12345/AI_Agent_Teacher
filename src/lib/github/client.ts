@@ -73,7 +73,7 @@ export function createGitHubClient(options: ClientOptions = {}) {
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   let rateLimit: RateLimit = null;
 
-  async function request(path: string): Promise<unknown> {
+  async function request(path: string, abort?: AbortSignal): Promise<unknown> {
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
@@ -86,7 +86,7 @@ export function createGitHubClient(options: ClientOptions = {}) {
       res = await fetchImpl(`${API_ROOT}${path}`, {
         headers,
         cache: "no-store",
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: abort ? AbortSignal.any([AbortSignal.timeout(timeoutMs), abort]) : AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
       const name = error instanceof Error ? error.name : "";
@@ -193,6 +193,8 @@ export function createGitHubClient(options: ClientOptions = {}) {
       limits?: DiffLimits,
       /** Spend the size budget on source code before tests, docs and config. */
       prioritize = false,
+      /** Stops the requests when a workflow run loses its lease. */
+      abort?: AbortSignal,
     ): Promise<CompareResult> {
       checkRepoName(owner, repo);
       const baseSha = base.toLowerCase();
@@ -209,12 +211,13 @@ export function createGitHubClient(options: ClientOptions = {}) {
         try {
           raw = await request(
             `/repos/${owner}/${repo}/compare/${baseSha}...${headSha}?per_page=${FILES_PER_PAGE}&page=${page}`,
+            abort,
           );
         } catch (error) {
           // GitHub answers 404 both for a missing repository and for an unknown commit.
           // If the repository itself is readable, the commit is what is missing.
           if (error instanceof GitHubError && error.code === "not_found") {
-            await request(`/repos/${owner}/${repo}`); // rethrows not_found if the repo is the problem
+            await request(`/repos/${owner}/${repo}`, abort); // rethrows not_found if the repo is the problem
             throw new GitHubError("invalid_ref");
           }
           throw error;

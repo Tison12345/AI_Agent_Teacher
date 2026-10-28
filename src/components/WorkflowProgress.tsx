@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { fetchWorkflowProgress } from "@/lib/api/client";
-import type { StepStatus, WorkflowProgress as Progress } from "@/lib/workflow/submission/progress";
+import { fetchEvaluationProgress, fetchWorkflowProgress } from "@/lib/api/client";
+import type { StepStatus } from "@/lib/workflow/progress-core";
 
 /** Looked at again this often while the workflow is working. */
 export const RUNNING_POLL_MS = 2_000;
@@ -18,30 +18,54 @@ const MARK: Record<StepStatus, { symbol: string; label: string; tone: string }> 
   skipped: { symbol: "–", label: "skipped", tone: "text-muted" },
 };
 
-const SUMMARY: Record<Progress["state"], string> = {
+/** What both workflows' progress looks like to the browser (see submission/progress.ts and evaluation/progress.ts). */
+export type ProgressView = {
+  state: string;
+  steps: { id: string; label: string; status: StepStatus; attempt?: number }[];
+  failure: { code: string; message: string } | null;
+  /** Which run this describes, for workflows that report it. */
+  run?: number;
+};
+
+const SUMMARY: Record<string, string> = {
   not_started: "Waiting to start.",
   running: "Working on it. This page updates by itself.",
-  waiting_faculty: "The AI recommendation is ready. Waiting for faculty to review it.",
-  complete: "Finished. Faculty have made their decision.",
+  waiting_faculty: "The AI review is ready. Waiting for a teacher to review it.",
+  complete: "Finished. A teacher has made the decision.",
   needs_ocr: "Stopped: this document has no typed text to read.",
   failed: "Stopped because of a problem.",
   skipped: "Nothing to do for this submission.",
 };
 
-const polls = (state: Progress["state"]) => state === "running" || state === "not_started" || state === "waiting_faculty";
+const polls = (state: string) => state === "running" || state === "not_started" || state === "waiting_faculty";
 
 /**
- * The steps of a submission's workflow, read from the real graph state (the allowlisted projection, which has
- * no text, AI output, marks or feedback). Polls every 2 seconds while the workflow works, and more slowly while
- * it waits for faculty. `onStateChange` lets the page above refresh when the workflow reaches a new state.
+ * The steps of a workflow, read from the real graph state (an allowlisted projection, which has no text, AI
+ * output, marks or feedback). Polls every 2 seconds while the workflow works, and more slowly while it waits for
+ * a teacher. `onStateChange` lets the page above refresh when the workflow reaches a new state.
  */
-export function WorkflowProgress({ submissionId, onStateChange }: { submissionId: string; onStateChange?: (state: Progress["state"]) => void }) {
-  const [progress, setProgress] = useState<Progress | null>(null);
+const STARTING: ProgressView = { state: "running", steps: [], failure: null };
+
+export function ProgressPanel({
+  load,
+  onStateChange,
+  stale,
+}: {
+  load: () => Promise<ProgressView>;
+  /** True for a progress that still describes the previous run (a run was just started): shown as "starting". */
+  stale?: (progress: ProgressView) => boolean;
+  onStateChange?: (state: string, progress: ProgressView) => void;
+}) {
+  const [progress, setProgress] = useState<ProgressView | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const lastState = useRef<Progress["state"] | null>(null);
+  const lastState = useRef<string | null>(null);
+  const loadRef = useRef(load);
   const notify = useRef(onStateChange);
+  const staleRef = useRef(stale);
   useEffect(() => {
+    loadRef.current = load;
     notify.current = onStateChange;
+    staleRef.current = stale;
   });
 
   useEffect(() => {
@@ -51,11 +75,12 @@ export function WorkflowProgress({ submissionId, onStateChange }: { submissionId
     async function look() {
       let next: number | null = RUNNING_POLL_MS;
       try {
-        const value = await fetchWorkflowProgress(submissionId);
+        const loaded = await loadRef.current();
         if (cancelled) return;
+        const value = staleRef.current?.(loaded) ? STARTING : loaded;
         setProgress(value);
         setProblem(null);
-        if (lastState.current !== null && lastState.current !== value.state) notify.current?.(value.state);
+        if (lastState.current !== value.state) notify.current?.(value.state, value);
         lastState.current = value.state;
         next = polls(value.state) ? (value.state === "waiting_faculty" ? WAITING_POLL_MS : RUNNING_POLL_MS) : null;
       } catch (error) {
@@ -70,7 +95,7 @@ export function WorkflowProgress({ submissionId, onStateChange }: { submissionId
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [submissionId]);
+  }, []);
 
   if (!progress) {
     return problem ? (
@@ -87,7 +112,7 @@ export function WorkflowProgress({ submissionId, onStateChange }: { submissionId
   return (
     <div className="well space-y-2 p-3 text-sm" data-testid="workflow-progress">
       <p role="status" className="font-medium text-fg">
-        {SUMMARY[progress.state]}
+        {SUMMARY[progress.state] ?? ""}
       </p>
       <ol className="space-y-1">
         {progress.steps.map((step) => {
@@ -113,5 +138,57 @@ export function WorkflowProgress({ submissionId, onStateChange }: { submissionId
       )}
       {problem && <p className="text-xs text-muted">Could not refresh just now; trying again.</p>}
     </div>
+  );
+}
+
+/** The progress of one submission's marking workflow. */
+/** A run is expected (the submission is "processing"), so an ending left over from an earlier run is not shown. */
+const LEFTOVER = ["failed", "needs_ocr", "complete", "skipped"];
+
+export function WorkflowProgress({
+  submissionId,
+  status,
+  onStateChange,
+}: {
+  submissionId: string;
+  /** The submission's own status. While it is "processing", a run is expected. */
+  status?: string;
+  onStateChange?: (state: string) => void;
+}) {
+  // The first look only reports the state found on arrival; the page above refreshes on a change after that.
+  const first = useRef<string | null>(null);
+  return (
+    <ProgressPanel
+      key={submissionId}
+      load={() => fetchWorkflowProgress(submissionId)}
+      stale={(progress) => status === "processing" && LEFTOVER.includes(progress.state)}
+      onStateChange={(state) => {
+        if (first.current !== null && first.current !== state) onStateChange?.(state);
+        first.current = state;
+      }}
+    />
+  );
+}
+
+/** The progress of one week's evaluation workflow. */
+export function EvaluationWorkflowProgress({
+  projectId,
+  weekNumber,
+  afterRun,
+  onStateChange,
+}: {
+  projectId: string;
+  weekNumber: number;
+  /** The run the workflow was on when this one was started; anything that ended that run or an older one is stale. */
+  afterRun: number;
+  onStateChange?: (state: string, progress: ProgressView) => void;
+}) {
+  return (
+    <ProgressPanel
+      key={`${projectId}:${weekNumber}`}
+      load={() => fetchEvaluationProgress(projectId, weekNumber)}
+      stale={(progress) => progress.run !== undefined && progress.run <= afterRun && progress.state !== "running" && progress.state !== "not_started"}
+      onStateChange={onStateChange}
+    />
   );
 }

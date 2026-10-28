@@ -270,7 +270,7 @@ function SubmissionCard({
       <p className="text-xs text-muted">Submitted {new Date(s.createdAt).toLocaleString()}</p>
 
       {(s.status === "processing" || s.status === "awaiting_review") && (
-        <WorkflowProgress submissionId={s.id} onStateChange={onWorkflowChange} />
+        <WorkflowProgress submissionId={s.id} status={s.status} onStateChange={onWorkflowChange} />
       )}
       {s.status === "awaiting_review" && <p className="text-muted">Waiting for your teacher to review. You will see your marks once they have.</p>}
       {(s.status === "needs_ocr" || s.status === "failed") && s.error && (

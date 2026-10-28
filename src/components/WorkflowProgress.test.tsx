@@ -50,7 +50,7 @@ describe("WorkflowProgress", () => {
     await tick(0);
     await tick(RUNNING_POLL_MS);
     expect(onStateChange).toHaveBeenCalledWith("waiting_faculty");
-    expect(screen.getByText(/waiting for faculty to review/i)).toBeInTheDocument();
+    expect(screen.getByText(/waiting for a teacher to review/i)).toBeInTheDocument();
     const calls = api.fetchWorkflowProgress.mock.calls.length;
     await tick(RUNNING_POLL_MS * 2);
     expect(api.fetchWorkflowProgress).toHaveBeenCalledTimes(calls); // not at the fast rate any more

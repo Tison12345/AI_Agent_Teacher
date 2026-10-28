@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   recordBaseline: vi.fn(),
   completeWeek: vi.fn(),
   requestEvaluation: vi.fn(),
+  fetchEvaluationProgress: vi.fn(),
   fetchResults: vi.fn(),
   fetchQuiz: vi.fn(),
 }));
@@ -36,7 +37,8 @@ const submitted = (week: number) => ({ weekNumber: week, status: "pending_review
 
 beforeEach(() => {
   vi.clearAllMocks();
-  api.requestEvaluation.mockResolvedValue({ ok: true, status: "pending_review" });
+  api.requestEvaluation.mockResolvedValue({ ok: true, afterRun: 0 });
+  api.fetchEvaluationProgress.mockResolvedValue({ state: "waiting_faculty", run: 1, steps: [], failure: null });
   api.fetchResults.mockResolvedValue([]);
   api.fetchQuiz.mockResolvedValue(null);
 });
@@ -156,17 +158,18 @@ describe("ProgressSection: evaluation after recording", () => {
     expect(within(row(1)).queryByRole("button", { name: "Generate evaluation" })).not.toBeInTheDocument();
   });
 
-  it("shows an 'evaluating' message while the AI works, and blocks other actions", async () => {
+  it("shows the evaluation's real progress while it runs, and blocks other actions", async () => {
     api.fetchProgress.mockResolvedValue(progress({ baseline }));
     api.completeWeek.mockResolvedValue({ ok: true, value: checkpoint(1) });
     let resolve: (v: unknown) => void = () => {};
-    api.requestEvaluation.mockReturnValue(new Promise((r) => (resolve = r)));
+    api.fetchEvaluationProgress.mockReturnValue(new Promise((r) => (resolve = r)));
     const user = userEvent.setup();
     render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await recordWeek1(user);
-    expect(await within(row(1)).findByRole("status")).toHaveTextContent(/Evaluating your code changes/);
+    expect(await within(row(1)).findByText("Loading progress…")).toBeInTheDocument();
+    expect(api.fetchEvaluationProgress).toHaveBeenCalledWith(PROJECT, 1);
     expect(screen.getByRole("button", { name: "Complete Week 2" })).toBeDisabled();
-    resolve({ ok: true, status: "pending_review" });
+    resolve({ state: "waiting_faculty", run: 1, steps: [], failure: null });
     expect(await within(row(1)).findByText("Recorded · submitted for teacher review")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Complete Week 2" })).toBeEnabled();
   });
@@ -176,7 +179,7 @@ describe("ProgressSection: evaluation after recording", () => {
     api.completeWeek.mockResolvedValue({ ok: true, value: checkpoint(1) });
     api.requestEvaluation
       .mockResolvedValueOnce({ ok: false, message: "Gemini is rate limiting requests. Please wait a minute and try again." })
-      .mockResolvedValueOnce({ ok: true, status: "pending_review" });
+      .mockResolvedValueOnce({ ok: true, afterRun: 0 });
     const user = userEvent.setup();
     render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await recordWeek1(user);
@@ -187,6 +190,26 @@ describe("ProgressSection: evaluation after recording", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument(); // the failed attempt's message is gone
     expect(api.requestEvaluation).toHaveBeenCalledTimes(2);
     expect(api.completeWeek).toHaveBeenCalledTimes(1); // retrying never records again
+  });
+
+  it("if the evaluation workflow fails, the week stays recorded, the fixed reason is shown, and it can be started again", async () => {
+    api.fetchProgress.mockResolvedValue(progress({ baseline }));
+    api.completeWeek.mockResolvedValue({ ok: true, value: checkpoint(1) });
+    api.fetchEvaluationProgress.mockResolvedValueOnce({
+      state: "failed",
+      run: 1,
+      steps: [],
+      failure: { code: "ai_unavailable", message: "The AI review service could not be reached." },
+    });
+    const user = userEvent.setup();
+    render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
+    await recordWeek1(user);
+    expect(await screen.findByRole("alert")).toHaveTextContent("The AI review service could not be reached.");
+    expect(within(row(1)).getByText("Recorded · not yet evaluated")).toBeInTheDocument();
+    await user.click(within(row(1)).getByRole("button", { name: "Generate evaluation" }));
+    expect(await within(row(1)).findByText("Recorded · submitted for teacher review")).toBeInTheDocument();
+    expect(api.requestEvaluation).toHaveBeenCalledTimes(2);
+    expect(api.completeWeek).toHaveBeenCalledTimes(1);
   });
 
   it("a network error during evaluation is reported and leaves the checkpoint recorded", async () => {

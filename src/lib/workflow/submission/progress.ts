@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { mergeTrace as mergeTraceItems, notStarted, projectSteps, type ProgressSpec, type SnapshotView as CoreSnapshot } from "../progress-core";
 
 /*
  * What a STUDENT (or the browser in general) may learn about a submission's workflow. This file is the only
@@ -35,21 +36,8 @@ export const TraceEntrySchema = z.object({
 });
 export type TraceEntry = z.infer<typeof TraceEntrySchema>;
 
-export const traceKey = (entry: TraceEntry) => `${entry.run}:${entry.node}:${entry.attempt}`;
-
-/** Appends entries, dropping any that are already there (a node re-run after a crash cannot add its entry twice). */
-export function mergeTrace(current: TraceEntry[], incoming: TraceEntry[]): TraceEntry[] {
-  const seen = new Set(current.map(traceKey));
-  const merged = [...current];
-  for (const entry of incoming) {
-    if (seen.has(traceKey(entry))) continue;
-    seen.add(traceKey(entry));
-    merged.push(entry);
-  }
-  // Only the current and the previous run are kept, so a thread that is retried many times stays small.
-  const latest = merged.reduce((max, entry) => Math.max(max, entry.run), 0);
-  return merged.filter((entry) => entry.run >= latest - 1);
-}
+/** Appends entries, dropping any that are already there (see progress-core). */
+export const mergeTrace = (current: TraceEntry[], incoming: TraceEntry[]): TraceEntry[] => mergeTraceItems(current, incoming);
 
 /** The sentence shown for each failure. Raw errors never reach the browser. */
 export const FAILURE_MESSAGES: Record<FailureCode, string> = {
@@ -87,63 +75,20 @@ export const WorkflowProgressSchema = z.object({
 export type WorkflowProgress = z.infer<typeof WorkflowProgressSchema>;
 export type StepStatus = z.infer<typeof StepStatusSchema>;
 
-/** The parts of the graph's snapshot that the projection reads. Everything else in the snapshot is ignored. */
-export type SnapshotView = {
-  values: {
-    run?: number;
-    outcome?: string;
-    failureCode?: FailureCode | null;
-    trace?: TraceEntry[];
-  };
-  /** The nodes the graph will run next. */
-  next: string[];
-  /** True while the graph is paused at an interrupt. */
-  interrupted: boolean;
-};
+export type SnapshotView = CoreSnapshot<FailureCode, WorkflowNode>;
 
-const NOT_STARTED: WorkflowProgress = {
-  state: "not_started",
-  steps: STEPS.map((step) => ({ id: step.id, label: step.label, status: "pending" as const })),
-  failure: null,
+const SPEC: ProgressSpec<WorkflowNode, FailureCode> = {
+  steps: STEPS,
+  waitingNode: "await_faculty",
+  terminalOutcomes: ["needs_ocr", "failed", "complete", "skipped"],
+  messages: FAILURE_MESSAGES,
 };
 
 export function notStartedProgress(): WorkflowProgress {
-  return structuredClone(NOT_STARTED);
+  return notStarted(SPEC) as WorkflowProgress;
 }
 
 /** Builds the allowlisted progress from a graph snapshot. */
 export function projectProgress(snapshot: SnapshotView | null): WorkflowProgress {
-  const values = snapshot?.values;
-  if (!snapshot || !values || !values.run) return notStartedProgress();
-
-  const run = values.run;
-  const trace = (Array.isArray(values.trace) ? values.trace : []).filter((entry) => entry.run === run);
-  const outcome = values.outcome ?? "running";
-  const terminal = outcome === "needs_ocr" || outcome === "failed" || outcome === "complete" || outcome === "skipped";
-  const active = terminal ? undefined : snapshot.next[0];
-
-  const steps: WorkflowProgress["steps"] = STEPS.map((step) => {
-    const entries = trace.filter((entry) => entry.node === step.id);
-    const attempts = entries.reduce((max, entry) => Math.max(max, entry.attempt), 0);
-    let status: StepStatus = "pending";
-    if (entries.some((entry) => entry.result === "failed")) status = "failed";
-    else if (entries.some((entry) => entry.result === "ok")) status = "done";
-    if (active === step.id) status = step.id === "await_faculty" && snapshot.interrupted ? "waiting" : "active";
-    return { id: step.id, label: step.label, status, ...(attempts > 1 ? { attempt: attempts } : {}) };
-  });
-
-  // A run that ended early leaves the steps it never reached as skipped, not pending.
-  if (terminal) {
-    for (const step of steps) if (step.status === "pending") step.status = "skipped";
-  }
-  const failure =
-    outcome === "failed" && values.failureCode ? { code: values.failureCode, message: FAILURE_MESSAGES[values.failureCode] } : null;
-
-  const state: WorkflowProgress["state"] =
-    outcome === "failed" || outcome === "needs_ocr" || outcome === "complete" || outcome === "skipped"
-      ? outcome
-      : snapshot.interrupted
-        ? "waiting_faculty"
-        : "running";
-  return { state, steps, failure };
+  return projectSteps(SPEC, snapshot) as WorkflowProgress;
 }

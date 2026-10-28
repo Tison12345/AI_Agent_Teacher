@@ -125,7 +125,7 @@ function Detail({
         <h2 id="workflow-heading" className="text-lg font-semibold">
           Workflow
         </h2>
-        <WorkflowProgress submissionId={s.id} />
+        <WorkflowProgress submissionId={s.id} status={s.status} />
       </section>
 
       <section aria-labelledby="original-heading" className="card space-y-2 p-6">

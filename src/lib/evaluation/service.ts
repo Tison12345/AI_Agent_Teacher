@@ -1,12 +1,9 @@
-import type { GeminiClient } from "@/lib/gemini/client";
-import type { DiffLimits } from "@/lib/github/diff";
 import type { CompareResult } from "@/lib/github/client";
 import type { Checkpoint } from "@/lib/schemas/checkpoint";
 import type { Evaluation, Snapshot } from "@/lib/schemas/evaluation";
-import type { StoredPlan } from "@/lib/schemas/weekly-plan";
-import { generateEvaluation } from "./generator";
+import type { StoredPlan, WeeklyPlanItem } from "@/lib/schemas/weekly-plan";
 import type { AssembledEvaluation } from "./assemble";
-import { EVALUATION_DIFF_LIMITS, type PreviousWeekContext } from "./prompt";
+import type { PreviousWeekContext } from "./prompt";
 
 export type EvaluationErrorCode = "checkpoint_required" | "plan_required" | "evaluation_exists";
 
@@ -56,17 +53,6 @@ export type EvaluationDeps = {
   checkpoints: { getCheckpoint(projectId: string, weekNumber: number): Promise<Checkpoint | null> };
   evaluations: EvaluationStore;
   getPlan: (projectId: string) => Promise<StoredPlan | null>;
-  github: {
-    compareCommits(
-      owner: string,
-      repo: string,
-      base: string,
-      head: string,
-      limits: DiffLimits,
-      prioritize: boolean,
-    ): Promise<CompareResult>;
-  };
-  gemini: { client: GeminiClient; model: string };
 };
 
 export function toSnapshot(diff: CompareResult): Snapshot {
@@ -91,16 +77,23 @@ export function toSnapshot(diff: CompareResult): Snapshot {
   };
 }
 
+export type EvaluationContext = {
+  checkpoint: Checkpoint;
+  week: WeeklyPlanItem;
+  previous: PreviousWeekContext;
+};
+
 /**
- * Evaluates one recorded week: fetches that checkpoint's diff, asks Gemini for a
- * structured review, validates it, and stores it as pending teacher review.
- * One evaluation per checkpoint; an existing one is never replaced.
+ * Everything an evaluation of one recorded week needs before any GitHub or Gemini work: the recorded checkpoint,
+ * the plan's week (its tasks and criteria) and the previous week's context. Throws EvaluationError when the
+ * checkpoint or plan is missing, or when the checkpoint already has an evaluation (one per checkpoint, never
+ * replaced). The evaluation workflow runs this first, and the route runs it to refuse early, before any run starts.
  */
-export async function evaluateWeek(
-  target: { projectId: string; owner: string; repo: string; weekNumber: number },
-  deps: EvaluationDeps,
-): Promise<StoredEvaluation> {
-  const { projectId, owner, repo, weekNumber } = target;
+export async function loadEvaluationContext(
+  target: { projectId: string; weekNumber: number },
+  deps: Pick<EvaluationDeps, "checkpoints" | "evaluations" | "getPlan">,
+): Promise<EvaluationContext> {
+  const { projectId, weekNumber } = target;
 
   const checkpoint = await deps.checkpoints.getCheckpoint(projectId, weekNumber);
   if (!checkpoint) throw new EvaluationError("checkpoint_required", weekNumber);
@@ -116,47 +109,12 @@ export async function evaluateWeek(
   let previous: PreviousWeekContext = null;
   if (weekNumber > 1) {
     const previousCheckpoint = await deps.checkpoints.getCheckpoint(projectId, weekNumber - 1);
-    const previousEvaluation = previousCheckpoint
-      ? await deps.evaluations.getByCheckpoint(previousCheckpoint.id)
-      : null;
+    const previousEvaluation = previousCheckpoint ? await deps.evaluations.getByCheckpoint(previousCheckpoint.id) : null;
     previous = {
       weekNumber: weekNumber - 1,
       title: stored.plan[weekNumber - 2]?.title ?? `Week ${weekNumber - 1}`,
       openItemsFromEarlierAiReview: previousEvaluation?.evaluation.incompleteRequirements.slice(0, 6) ?? [],
     };
   }
-
-  // The diff is always between the two recorded SHAs. Commit messages are never read.
-  const diff = await deps.github.compareCommits(
-    owner,
-    repo,
-    checkpoint.baseCommitSha,
-    checkpoint.commitSha,
-    { ...EVALUATION_DIFF_LIMITS },
-    true,
-  );
-  const snapshot = toSnapshot(diff);
-
-  const result = await generateEvaluation(
-    { weekNumber, week, previous, snapshot },
-    deps.gemini,
-  );
-
-  try {
-    return await deps.evaluations.insert({
-      projectId,
-      checkpointId: checkpoint.id,
-      weekNumber,
-      result,
-      snapshot,
-      model: deps.gemini.model,
-    });
-  } catch (error) {
-    if (error instanceof EvaluationConflictError) {
-      // Another request finished first; report it and change nothing.
-      const winner = await deps.evaluations.getByCheckpoint(checkpoint.id);
-      throw new EvaluationError("evaluation_exists", weekNumber, winner?.evaluation.status);
-    }
-    throw error;
-  }
+  return { checkpoint, week, previous };
 }

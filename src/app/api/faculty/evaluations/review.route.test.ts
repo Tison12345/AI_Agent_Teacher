@@ -16,6 +16,9 @@ vi.mock("@/lib/projects/repository", () => ({
   RepositoryError: class extends Error {},
 }));
 vi.mock("@/lib/db/supabase", () => ({ StorageConfigError: class extends Error {} }));
+// The decision wakes the paused evaluation workflow; here that is a recorded call, never a database connection.
+const workflow = vi.hoisted(() => ({ resumeAfterDecision: vi.fn(async () => {}) }));
+vi.mock("@/lib/workflow/evaluation", () => ({ getEvaluationRunner: () => workflow }));
 
 import { GET as getResults } from "../../projects/[id]/results/route";
 import { GET as getDetail } from "./[id]/route";

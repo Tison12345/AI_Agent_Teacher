@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EvaluationProgressSchema, type EvaluationProgress } from "@/lib/workflow/evaluation/progress";
 import { WorkflowProgressSchema, type WorkflowProgress } from "@/lib/workflow/submission/progress";
 import type { ProjectSubmitResult } from "@/components/ProjectForm";
 import { ProjectSchema, type Project } from "@/lib/schemas/project";
@@ -156,13 +157,15 @@ export async function completeWeek(
 
 export type EvaluationStatus = "pending_review" | "approved" | "edited" | "rejected";
 export type EvaluationRequestResult =
-  | { ok: true; status: EvaluationStatus }
+  /** `afterRun`: the run the workflow was on when this one was started; the new run is a later one. */
+  | { ok: true; afterRun: number }
   /** `status` is set when an evaluation already exists (the request changed nothing). */
   | { ok: false; message: string; status?: EvaluationStatus };
 
 /**
- * Asks the server to evaluate a recorded week (can take up to a minute). The reply
- * carries the status only: the AI's score is never sent to the student's browser.
+ * Asks the server to start evaluating a recorded week. The evaluation then runs in the background as a
+ * workflow: follow it with fetchEvaluationProgress. The reply carries no score: the AI's score is never sent
+ * to the student's browser.
  */
 export async function requestEvaluation(
   projectId: string,
@@ -173,10 +176,8 @@ export async function requestEvaluation(
     { method: "POST" },
   );
   if (res.ok) {
-    const body = z
-      .object({ evaluation: z.object({ status: z.enum(["pending_review", "approved", "edited", "rejected"]) }) })
-      .parse(await res.json());
-    return { ok: true, status: body.evaluation.status };
+    const body = z.object({ workflow: z.object({ afterRun: z.number().int() }) }).safeParse(await res.json().catch(() => null));
+    return { ok: true, afterRun: body.success ? body.data.workflow.afterRun : 0 };
   }
   const body: unknown = await res.json().catch(() => null);
   const parsed = z
@@ -465,4 +466,11 @@ export async function fetchWorkflowProgress(submissionId: string): Promise<Workf
   const res = await fetch(`/api/submissions/${encodeURIComponent(submissionId)}/workflow`, { cache: "no-store" });
   if (!res.ok) throw new Error(await readError(res));
   return z.object({ progress: WorkflowProgressSchema }).parse(await res.json()).progress;
+}
+
+/** Where a week's evaluation is in its workflow (the allowlisted projection; it never contains the AI's score). */
+export async function fetchEvaluationProgress(projectId: string, weekNumber: number): Promise<EvaluationProgress> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/weeks/${weekNumber}/workflow`, { cache: "no-store" });
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ progress: EvaluationProgressSchema }).parse(await res.json()).progress;
 }
