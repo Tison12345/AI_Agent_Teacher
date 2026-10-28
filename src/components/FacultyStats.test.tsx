@@ -1,10 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/react";
+import type { Project } from "@/lib/schemas/project";
 import type { QueueItem } from "@/lib/schemas/review";
-
-const api = vi.hoisted(() => ({ fetchQueue: vi.fn() }));
-vi.mock("@/lib/api/client", () => api);
-
 import { FacultyStats } from "./FacultyStats";
 
 const P1 = "123e4567-e89b-42d3-a456-426614174000";
@@ -23,85 +20,87 @@ const item = (over: Partial<QueueItem> = {}): QueueItem => ({
   createdAt: "2026-10-26T10:00:00+00:00",
   ...over,
 });
+const project = (id: string, title: string): Project => ({
+  id,
+  title,
+  description: "A description that is long enough.",
+  repoUrl: "https://github.com/o/r",
+  durationWeeks: 4,
+  createdAt: "2026-10-25T12:00:00+00:00",
+});
+const PROJECTS = [project(P1, "Library app"), project(P2, "Other app")];
 
 beforeEach(() => {
-  vi.clearAllMocks();
   n = 0;
 });
 
+/** The card whose label is `label`. */
+const stat = (label: string) => screen.getByText(label).closest("div")!.parentElement as HTMLElement;
+
 describe("FacultyStats", () => {
-  it("asks for every evaluation, whatever the list below is filtered to", async () => {
-    api.fetchQueue.mockResolvedValue([]);
-    render(<FacultyStats />);
-    expect(screen.getByRole("status")).toHaveTextContent("Loading summary");
-    await screen.findByRole("region", { name: "Pending reviews" });
-    expect(api.fetchQueue).toHaveBeenCalledWith("all");
+  it("with nothing yet: no average is invented and nothing is pending", () => {
+    render(<FacultyStats items={[]} projects={[]} />);
+    expect(stat("Total projects")).toHaveTextContent("0");
+    expect(stat("Projects with evaluations")).toHaveTextContent("no projects yet");
+    expect(stat("Average official score")).toHaveTextContent("–");
+    expect(stat("Average official score")).toHaveTextContent("no scored weeks yet");
+    expect(stat("Pending reviews")).toHaveTextContent("0");
+    expect(stat("Pending reviews")).toHaveTextContent("all caught up");
+    expect(stat("Quiz average")).toHaveTextContent("–");
   });
 
-  it("with nothing yet: no average is invented and nothing is pending", async () => {
-    api.fetchQueue.mockResolvedValue([]);
-    render(<FacultyStats />);
-    const average = await screen.findByRole("region", { name: "Average official score" });
-    expect(average).toHaveTextContent("No reviewed weeks yet");
-    expect(average.textContent).not.toMatch(/\d/);
-    expect(screen.getByRole("region", { name: "Pending reviews" })).toHaveTextContent("All caught up");
+  it("averages only official scores: the AI's suggestion and rejected weeks never count", () => {
+    render(
+      <FacultyStats
+        items={[
+          item({ weekNumber: 1, status: "approved", suggestedScore: 100, officialScore: 80 }),
+          item({ weekNumber: 2, status: "edited", suggestedScore: 100, officialScore: 60 }),
+          item({ weekNumber: 3, status: "rejected", suggestedScore: 100, officialScore: null }),
+          item({ weekNumber: 4, status: "pending_review", suggestedScore: 100 }),
+        ]}
+        projects={PROJECTS}
+      />,
+    );
+    expect(stat("Average official score")).toHaveTextContent("70");
+    expect(stat("Average official score")).toHaveTextContent("across 2 scored weeks");
   });
 
-  it("averages only official scores: the AI's suggestion and rejected weeks never count", async () => {
-    api.fetchQueue.mockResolvedValue([
-      item({ weekNumber: 1, status: "approved", suggestedScore: 100, officialScore: 80 }),
-      item({ weekNumber: 2, status: "edited", suggestedScore: 100, officialScore: 60 }),
-      item({ weekNumber: 3, status: "rejected", suggestedScore: 100, officialScore: null }),
-      item({ weekNumber: 4, status: "pending_review", suggestedScore: 100 }),
-    ]);
-    render(<FacultyStats />);
-    const average = await screen.findByRole("region", { name: "Average official score" });
-    expect(within(average).getByLabelText("Average official score: 70 out of 100")).toBeInTheDocument();
-    expect(average).toHaveTextContent("Across 2 reviewed weeks in 1 project.");
-    expect(average).toHaveTextContent("never the AI's");
+  it("a real average of zero is shown as 0, not as missing", () => {
+    render(<FacultyStats items={[item({ status: "approved", officialScore: 0 })]} projects={PROJECTS} />);
+    expect(stat("Average official score")).toHaveTextContent("0");
+    expect(stat("Average official score")).not.toHaveTextContent("–");
   });
 
-  it("compares weeks: the average official score of each week number across projects", async () => {
-    api.fetchQueue.mockResolvedValue([
-      item({ projectId: P1, weekNumber: 1, status: "approved", officialScore: 80 }),
-      item({ projectId: P2, projectTitle: "Other", weekNumber: 1, status: "approved", officialScore: 60 }),
-      item({ projectId: P1, weekNumber: 2, status: "approved", officialScore: 90 }),
-    ]);
-    render(<FacultyStats />);
-    const bars = await screen.findByRole("group", { name: "Official result by week" });
-    expect(bars).toHaveTextContent("W1: 70 out of 100");
-    expect(bars).toHaveTextContent("W2: 90 out of 100");
-    expect(bars).not.toHaveTextContent("W3");
+  it("counts projects, evaluated projects, pending and reviewed weeks and quizzes from the real data", () => {
+    render(
+      <FacultyStats
+        items={[
+          item({ weekNumber: 1, status: "pending_review", quiz: { status: "taken", correctCount: 1, total: 5 } }),
+          item({ weekNumber: 2, status: "pending_review", quiz: { status: "not_taken", correctCount: null, total: null } }),
+          item({ projectId: P2, projectTitle: "Other app", weekNumber: 1, status: "approved", officialScore: 50, quiz: { status: "taken", correctCount: 3, total: 5 } }),
+        ]}
+        projects={PROJECTS}
+      />,
+    );
+    expect(stat("Total projects")).toHaveTextContent("2");
+    expect(stat("Projects with evaluations")).toHaveTextContent("2");
+    expect(stat("Projects with evaluations")).toHaveTextContent("of 2");
+    expect(stat("Pending reviews")).toHaveTextContent("2");
+    expect(stat("Pending reviews")).toHaveTextContent("waiting for your decision");
+    expect(stat("Reviewed weeks")).toHaveTextContent("1");
+    expect(stat("Quiz average")).toHaveTextContent("40%"); // (20% + 60%) / 2
+    expect(stat("Quiz average")).toHaveTextContent("2 quizzes taken");
   });
 
-  it("counts pending reviews, projects, reviewed weeks and quizzes from the real data", async () => {
-    api.fetchQueue.mockResolvedValue([
-      item({ weekNumber: 1, status: "pending_review", quiz: { status: "taken", correctCount: 1, total: 5 } }),
-      item({ weekNumber: 2, status: "pending_review", quiz: { status: "not_taken", correctCount: null, total: null } }),
-      item({ projectId: P2, projectTitle: "Other", weekNumber: 1, status: "approved", officialScore: 50, quiz: { status: "taken", correctCount: 3, total: 5 } }),
-    ]);
-    render(<FacultyStats />);
-    const pending = await screen.findByRole("region", { name: "Pending reviews" });
-    expect(pending).toHaveTextContent("2weeks");
-    expect(pending).toHaveTextContent("2 to review");
-    // Projects, reviewed weeks, quizzes taken, quiz average.
-    expect(screen.getByText("Projects").parentElement).toHaveTextContent("2");
-    expect(screen.getByText("Reviewed weeks").parentElement).toHaveTextContent("1");
-    expect(screen.getByText("Quizzes taken").parentElement).toHaveTextContent("2");
-    expect(screen.getByText("Quizzes taken").parentElement).toHaveTextContent("of 3 created");
-    expect(screen.getByText("Quiz average").parentElement).toHaveTextContent("40%"); // (1/5 + 3/5) / 2
+  it("a project with no evaluation is a project but not an evaluated project", () => {
+    render(<FacultyStats items={[item()]} projects={PROJECTS} />);
+    expect(stat("Total projects")).toHaveTextContent("2");
+    expect(stat("Projects with evaluations")).toHaveTextContent("1");
   });
 
-  it("shows a dash for the quiz average when nobody has taken a quiz", async () => {
-    api.fetchQueue.mockResolvedValue([item()]);
-    render(<FacultyStats />);
-    await screen.findByRole("region", { name: "Pending reviews" });
-    expect(screen.getByText("Quiz average").parentElement).toHaveTextContent("–");
-  });
-
-  it("says so, without breaking the page, when the summary cannot be loaded", async () => {
-    api.fetchQueue.mockRejectedValue(new Error("down"));
-    render(<FacultyStats />);
-    expect(await screen.findByText(/summary could not be loaded/)).toBeInTheDocument();
+  it("shows a dash for the quiz average when nobody has taken a quiz", () => {
+    render(<FacultyStats items={[item()]} projects={PROJECTS} />);
+    expect(stat("Quiz average")).toHaveTextContent("–");
+    expect(stat("Quiz average")).toHaveTextContent("no quizzes taken yet");
   });
 });

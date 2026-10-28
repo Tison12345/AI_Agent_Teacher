@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/react";
-import { Icon, PageHeader, ProgressBar, ScoreCard, StatCard, WeekScoreBars } from "./ui";
+import userEvent from "@testing-library/user-event";
+import { Disclosure, Icon, PageHeader, ProgressBar, ScoreCard, StatCard, WeekScoreBars } from "./ui";
 
 describe("ProgressBar", () => {
   it.each([
@@ -61,32 +62,111 @@ describe("ScoreCard", () => {
 });
 
 describe("WeekScoreBars", () => {
-  it("shows each week's real score, and a dash with a spoken explanation where there is none", () => {
+  it("shows each week's real score, and the reason in words where there is none", () => {
     render(
       <WeekScoreBars
         weeks={[
           { weekNumber: 1, score: 80 },
-          { weekNumber: 2, score: null, note: "Waiting for review" },
+          { weekNumber: 2, score: null, note: "Awaiting review" },
           { weekNumber: 3, score: 0 },
+          { weekNumber: 4, score: null, note: "Not recorded" },
         ]}
       />,
     );
     const bars = screen.getByRole("group", { name: "Official result by week" });
     expect(bars).toHaveTextContent("W1: 80 out of 100");
-    expect(bars).toHaveTextContent("W2 has no official result (Waiting for review)");
+    expect(bars).toHaveTextContent("W2 has no official result (Awaiting review)");
     expect(bars).toHaveTextContent("W3: 0 out of 100"); // zero is a real score
-    expect(within(bars).getByText("–")).toBeInTheDocument();
+    expect(bars).toHaveTextContent("W4 has no official result (Not recorded)");
+    expect(within(bars).getByText("Awaiting review", { selector: "span[aria-hidden]" })).toBeInTheDocument();
+    expect(within(bars).getByText("Not recorded", { selector: "span[aria-hidden]" })).toBeInTheDocument();
   });
 
-  it("scales each bar to its score, and never beyond the track", () => {
+  it("draws horizontal bars scaled to a 0-100 axis, never taller than a thin track", () => {
     const { container } = render(<WeekScoreBars weeks={[{ weekNumber: 1, score: 50 }, { weekNumber: 2, score: 140 }]} />);
-    const heights = [...container.querySelectorAll<HTMLElement>("[style*='height']")].map((el) => el.style.height);
-    expect(heights).toEqual(["50%", "100%"]);
+    const widths = [...container.querySelectorAll<HTMLElement>("[style*='width']")].map((el) => el.style.width);
+    expect(widths).toEqual(["50%", "100%"]);
+    expect(container.querySelector("[style*='height']")).toBeNull(); // no tall, stretched block
+    const axis = [...container.querySelectorAll(".justify-between > span")].map((s) => s.textContent).filter((t) => /^\d+$/.test(t ?? ""));
+    expect(axis).toEqual(["0", "25", "50", "75", "100"]);
   });
 
-  it("is not a list, so it does not add list items to the page", () => {
-    render(<WeekScoreBars weeks={[{ weekNumber: 1, score: 10 }]} />);
+  it("looks balanced with a single recorded week: one row with its label, bar and value", () => {
+    const { container } = render(<WeekScoreBars weeks={[{ weekNumber: 1, score: 100 }]} />);
+    expect(container.querySelectorAll("[style*='width']")).toHaveLength(1);
+    expect(screen.getByRole("group")).toHaveTextContent("W1: 100 out of 100");
+  });
+
+  it("a zero is a marker on the zero line, not an empty dashed track like an unrecorded week", () => {
+    const { container } = render(
+      <WeekScoreBars weeks={[{ weekNumber: 1, score: 0 }, { weekNumber: 2, score: null, note: "Not recorded" }]} />,
+    );
+    const tracks = container.querySelectorAll("div[aria-hidden='true'].relative");
+    expect(tracks).toHaveLength(2);
+    expect(tracks[0]).not.toHaveClass("border-dashed");
+    expect(tracks[0].querySelector(".bg-accent")).not.toBeNull(); // the zero marker
+    expect(tracks[1]).toHaveClass("border-dashed");
+    expect(tracks[1].children).toHaveLength(0);
+  });
+
+  it("is not a list, and no loading animation is used for a score", () => {
+    const { container } = render(<WeekScoreBars weeks={[{ weekNumber: 1, score: 10 }]} />);
     expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+    expect(container.querySelector("[class*='animate-']")).toBeNull();
+  });
+});
+
+describe("Disclosure", () => {
+  it("is collapsed by default, with its summary visible and its details hidden", () => {
+    render(
+      <Disclosure summary={<span>Week 1 quiz · 1/5 correct</span>}>
+        <p>Details</p>
+      </Disclosure>,
+    );
+    const button = screen.getByRole("button", { name: /Week 1 quiz · 1\/5 correct/ });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Details")).not.toBeVisible();
+    expect(button).toHaveAttribute("aria-controls", screen.getByText("Details").parentElement!.id);
+  });
+
+  it("opens and closes on click, and the chevron rotates when open", async () => {
+    const user = userEvent.setup();
+    render(
+      <Disclosure summary="Summary">
+        <p>Details</p>
+      </Disclosure>,
+    );
+    const button = screen.getByRole("button", { name: "Summary" });
+    const chevron = button.querySelector("svg")!;
+    expect(chevron).not.toHaveClass("rotate-180");
+    await user.click(button);
+    expect(screen.getByText("Details")).toBeVisible();
+    expect(chevron).toHaveClass("rotate-180");
+    await user.click(button);
+    expect(screen.getByText("Details")).not.toBeVisible();
+  });
+
+  it("works from the keyboard with Enter and Space", async () => {
+    const user = userEvent.setup();
+    render(
+      <Disclosure summary="Summary">
+        <p>Details</p>
+      </Disclosure>,
+    );
+    await user.tab();
+    await user.keyboard("{Enter}");
+    expect(screen.getByText("Details")).toBeVisible();
+    await user.keyboard(" ");
+    expect(screen.getByText("Details")).not.toBeVisible();
+  });
+
+  it("can start open", () => {
+    render(
+      <Disclosure summary="Summary" defaultOpen>
+        <p>Details</p>
+      </Disclosure>,
+    );
+    expect(screen.getByText("Details")).toBeVisible();
   });
 });
 

@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   completeWeek: vi.fn(),
   requestEvaluation: vi.fn(),
   fetchResults: vi.fn(),
+  fetchQuiz: vi.fn(),
 }));
 vi.mock("@/lib/api/client", () => api);
 
@@ -37,6 +38,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   api.requestEvaluation.mockResolvedValue({ ok: true, status: "pending_review" });
   api.fetchResults.mockResolvedValue([]);
+  api.fetchQuiz.mockResolvedValue(null);
 });
 
 const row = (week: number) => screen.getByText(`Week ${week}`).closest("li") as HTMLElement;
@@ -261,8 +263,10 @@ describe("ProgressSection: the teacher's official result", () => {
     api.fetchResults.mockResolvedValue([result({})]);
     render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await screen.findByText("Recorded · reviewed by your teacher");
-    expect(await within(row(1)).findByText(/Official result: 82\.5\/100/)).toBeInTheDocument();
-    expect(within(row(1)).getByText("Teacher feedback")).toBeInTheDocument();
+    const decision = await within(row(1)).findByRole("region", { name: "Official faculty decision" });
+    expect(within(decision).getByLabelText("Official score 82.5 out of 100")).toBeInTheDocument();
+    expect(decision).toHaveTextContent("Approved");
+    expect(within(decision).getByText("Faculty feedback")).toBeInTheDocument();
     expect(row(1)).toHaveTextContent("Add validation");
     expect(api.fetchResults).toHaveBeenCalledWith(PROJECT);
   });
@@ -274,7 +278,9 @@ describe("ProgressSection: the teacher's official result", () => {
     api.fetchResults.mockResolvedValue([result({ outcome: "rejected", officialScore: null, feedback: null })]);
     render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await screen.findByText("Recorded · reviewed by your teacher");
-    expect(await within(row(1)).findByText(/did not give an official mark/)).toBeInTheDocument();
+    const decision = await within(row(1)).findByRole("region", { name: "Official faculty decision" });
+    expect(decision).toHaveTextContent("Rejected");
+    expect(decision).toHaveTextContent("No official score was given");
     expect(row(1).textContent).not.toMatch(/\d+\s*\/\s*100/);
   });
 
@@ -285,7 +291,7 @@ describe("ProgressSection: the teacher's official result", () => {
     render(<ProgressSection projectId={PROJECT} durationWeeks={12} />);
     await screen.findByText("Recorded · submitted for teacher review");
     expect(api.fetchResults).not.toHaveBeenCalled();
-    expect(within(row(1)).queryByText(/Official result/)).not.toBeInTheDocument();
+    expect(within(row(1)).queryByRole("region", { name: "Official faculty decision" })).not.toBeInTheDocument();
   });
 
   it("says so when the result cannot be loaded, instead of showing nothing", async () => {
@@ -320,7 +326,7 @@ describe("ProgressSection: the summary cards", () => {
     expect(average.textContent).not.toMatch(/\d+\s*\/\s*100/);
     const progressCard = card("Project progress");
     expect(progressCard).toHaveTextContent("2of 4");
-    expect(progressCard).toHaveTextContent("0 reviewed");
+    expect(progressCard).toHaveTextContent("0 approved");
     expect(progressCard).toHaveTextContent("2 waiting for review");
     expect(progressCard).toHaveTextContent("2 not recorded");
     expect(within(progressCard).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
@@ -346,7 +352,65 @@ describe("ProgressSection: the summary cards", () => {
     expect(bars).toHaveTextContent("W2: 65 out of 100");
     expect(bars).toHaveTextContent("W3 has no official result");
     expect(bars).toHaveTextContent("W4 has no official result");
-    expect(card("Project progress")).toHaveTextContent("3 reviewed");
+    expect(card("Project progress")).toHaveTextContent("2 approved");
+  });
+});
+
+describe("ProgressSection: the project dashboard", () => {
+  const stat = (label: string) => screen.getByText(label).closest("div")!.parentElement as HTMLElement;
+
+  it("counts approved, pending and unrecorded weeks, which add up to the project's length", async () => {
+    api.fetchProgress.mockResolvedValue(
+      progress({
+        baseline,
+        checkpoints: [checkpoint(1), checkpoint(2), checkpoint(3)],
+        evaluations: [
+          { weekNumber: 1, status: "approved" },
+          { weekNumber: 2, status: "edited" },
+          { weekNumber: 3, status: "pending_review" },
+        ],
+      }),
+    );
+    api.fetchResults.mockResolvedValue([
+      { weekNumber: 1, outcome: "approved", officialScore: 80, feedback: null, decidedAt: "2026-10-26T12:00:00+00:00" },
+      { weekNumber: 2, outcome: "edited", officialScore: 60, feedback: null, decidedAt: "2026-10-26T12:00:00+00:00" },
+    ]);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={5} />);
+    await screen.findByText("Approved weeks");
+    expect(stat("Approved weeks")).toHaveTextContent("2");
+    expect(stat("Pending reviews")).toHaveTextContent("1");
+    expect(stat("Unrecorded weeks")).toHaveTextContent("2");
+    const bars = await screen.findByRole("group", { name: "Official result by week" });
+    expect(bars).toHaveTextContent("W3 has no official result (Awaiting review)");
+    expect(bars).toHaveTextContent("W4 has no official result (Not recorded)");
+  });
+
+  it("a project with one recorded week and a score of zero shows 0, not an empty chart", async () => {
+    api.fetchProgress.mockResolvedValue(
+      progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [{ weekNumber: 1, status: "approved" }] }),
+    );
+    api.fetchResults.mockResolvedValue([
+      { weekNumber: 1, outcome: "approved", officialScore: 0, feedback: null, decidedAt: "2026-10-26T12:00:00+00:00" },
+    ]);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={1} />);
+    const average = await screen.findByRole("region", { name: "Average official result" });
+    expect(await within(average).findByLabelText("Average official result: 0 out of 100")).toBeInTheDocument();
+    expect(within(average).getByRole("group")).toHaveTextContent("W1: 0 out of 100");
+  });
+
+  it("the week's official decision uses the indigo card, not the green quiz colours", async () => {
+    api.fetchProgress.mockResolvedValue(
+      progress({ baseline, checkpoints: [checkpoint(1)], evaluations: [{ weekNumber: 1, status: "approved" }] }),
+    );
+    api.fetchResults.mockResolvedValue([
+      { weekNumber: 1, outcome: "approved", officialScore: 100, feedback: "Well done", decidedAt: "2026-10-26T12:00:00+00:00" },
+    ]);
+    render(<ProgressSection projectId={PROJECT} durationWeeks={2} />);
+    await screen.findByText("Recorded · reviewed by your teacher");
+    const decision = await within(row(1)).findByRole("region", { name: "Official faculty decision" });
+    expect(decision).toHaveClass("card-official");
+    expect(decision).not.toHaveClass("alert-success");
+    expect(decision).toHaveTextContent("Well done");
   });
 });
 

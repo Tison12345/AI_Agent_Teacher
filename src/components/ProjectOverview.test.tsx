@@ -134,6 +134,36 @@ describe("ProjectOverview", () => {
     expect(screen.getByText("AI missed the main files")).toBeInTheDocument();
   });
 
+  it("starts with a project dashboard: repository, average, recorded, approved, pending and unrecorded weeks", async () => {
+    render(<ProjectOverview id={ID} />);
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.getByText(/Repository: octocat\/hello-world/)).toBeInTheDocument();
+    const stat = (label: string) => screen.getByText(label).closest("div")!.parentElement as HTMLElement;
+    expect(stat("Weeks recorded")).toHaveTextContent("3/4");
+    expect(stat("Approved weeks")).toHaveTextContent("1"); // the edited week counts
+    expect(stat("Pending reviews")).toHaveTextContent("1");
+    expect(stat("Unrecorded weeks")).toHaveTextContent("1");
+    const average = screen.getByRole("region", { name: "Average official score" });
+    expect(average).toHaveTextContent("65");
+    const bars = within(average).getByRole("group", { name: "Official result by week" });
+    expect(bars).toHaveTextContent("W1: 65 out of 100");
+    expect(bars).toHaveTextContent("W2 has no official result (Awaiting review)");
+    expect(bars).toHaveTextContent("W3 has no official result (Not evaluated)");
+    expect(bars).toHaveTextContent("W4 has no official result (Not recorded)");
+  });
+
+  it("a one-week project with a genuine zero shows 0, not an empty dashboard", async () => {
+    api.fetchProjectOverview.mockResolvedValue(
+      overview([week({ state: "approved", evaluationId: EVAL, recordedAt: "2026-10-26T10:00:00+00:00", officialScore: 0 })]),
+    );
+    render(<ProjectOverview id={ID} />);
+    await screen.findByRole("heading", { level: 1 });
+    const average = screen.getByRole("region", { name: "Average official score" });
+    expect(within(average).getByLabelText("Average official score: 0 out of 100")).toBeInTheDocument();
+    expect(within(average).getByRole("group")).toHaveTextContent("W1: 0 out of 100");
+    expect(screen.getByText("Weeks recorded").closest("div")!.parentElement).toHaveTextContent("1/1");
+  });
+
   it("says when the project does not exist", async () => {
     api.fetchProjectOverview.mockResolvedValue(null);
     render(<ProjectOverview id={ID} />);

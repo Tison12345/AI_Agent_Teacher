@@ -114,7 +114,9 @@ describe("EvaluationReview: deciding", () => {
     api.sendDecision.mockResolvedValue({ ok: true, decision: decisionOf({}) });
     await user.click(screen.getByRole("button", { name: "Yes, record decision" }));
     expect(api.sendDecision).toHaveBeenCalledWith(detail.evaluation.id, { decision: "approve", comment: "" });
-    expect(await screen.findByRole("heading", { name: "Official decision: Approved" })).toBeInTheDocument();
+    const card = (await screen.findByRole("heading", { name: "Official faculty decision" })).closest("section")!;
+    expect(card).toHaveTextContent("Approved");
+    expect(card).toHaveClass("card-official");
     expect(screen.queryByRole("button", { name: "Review decision" })).not.toBeInTheDocument();
   });
 
@@ -151,8 +153,9 @@ describe("EvaluationReview: deciding", () => {
       detail.evaluation.id,
       expect.objectContaining({ decision: "edit", approvedScore: 70.5, comment: "AI missed a bug" }),
     );
-    expect(await screen.findByRole("heading", { name: "Official decision: Edited" })).toBeInTheDocument();
-    expect(screen.getByText(/the AI suggested 94/)).toBeInTheDocument();
+    const card = (await screen.findByRole("heading", { name: "Official faculty decision" })).closest("section")!;
+    expect(card).toHaveTextContent("Edited by faculty");
+    expect(screen.getByText(/The AI suggested 94/)).toBeInTheDocument();
     expect(screen.getByText("AI missed a bug")).toBeInTheDocument();
   });
 
@@ -211,8 +214,10 @@ describe("EvaluationReview: deciding", () => {
     };
     api.fetchReview.mockResolvedValue(detail);
     render(<EvaluationReview id={detail.evaluation.id} />);
-    const section = (await screen.findByRole("heading", { name: "Official decision: Edited" })).closest("section")!;
-    expect(within(section).getByText(/60\/100/)).toBeInTheDocument();
+    const section = (await screen.findByRole("heading", { name: "Official faculty decision" })).closest("section")!;
+    expect(within(section).getByLabelText("Official score 60 out of 100")).toBeInTheDocument();
+    expect(section).toHaveTextContent("Edited by faculty");
+    expect(within(section).getByText("Your private comment")).toBeInTheDocument();
     expect(within(section).getByText("Fix it")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Your decision" })).not.toBeInTheDocument();
   });

@@ -37,18 +37,22 @@ const taken = (correct: number): Extract<QuizView, { state: "taken" }> => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  api.fetchQuiz.mockResolvedValue(null);
 });
+
+const header = (score: string) => screen.findByRole("button", { name: new RegExp(score) });
 
 async function start(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "Week 2 quiz" }));
 }
 
 describe("QuizPanel", () => {
-  it("asks for nothing until the student clicks, and says there is one attempt", () => {
+  it("creates nothing until the student clicks, and says there is one attempt", () => {
     render(<QuizPanel projectId="p1" week={2} />);
     expect(screen.getByRole("button", { name: "Week 2 quiz" })).toBeInTheDocument();
     expect(screen.getByText(/One attempt/)).toBeInTheDocument();
-    expect(api.fetchQuiz).not.toHaveBeenCalled();
+    // Only a read, to find a quiz that was already taken.
+    expect(api.fetchQuiz).toHaveBeenCalledTimes(1);
     expect(api.createQuiz).not.toHaveBeenCalled();
   });
 
@@ -105,13 +109,43 @@ describe("QuizPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Request failed (500).");
   });
 
-  it("a quiz that was already taken is shown as its review straight away", async () => {
+  it("a quiz that was already taken shows its score collapsed, without a click", async () => {
+    api.fetchQuiz.mockResolvedValue(taken(4));
+    render(<QuizPanel projectId="p1" week={2} />);
+    const button = await header("4/5 correct");
+    expect(button).toHaveTextContent("Week 2 quiz");
+    expect(button).toHaveTextContent(/Submitted/);
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Week 2 quiz" })).not.toBeInTheDocument();
+    expect(screen.getByText("Explanation 1.")).not.toBeVisible();
+    expect(screen.queryByRole("form")).not.toBeInTheDocument();
+  });
+
+  it("opens to the questions on click and closes again, and the score stays visible", async () => {
     api.fetchQuiz.mockResolvedValue(taken(4));
     const user = userEvent.setup();
     render(<QuizPanel projectId="p1" week={2} />);
-    await start(user);
-    expect(await screen.findByText(/Quiz result: 4\/5 correct/)).toBeInTheDocument();
-    expect(screen.queryByRole("form")).not.toBeInTheDocument();
+    const button = await header("4/5 correct");
+    await user.click(button);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Explanation 1.")).toBeVisible();
+    await user.click(button);
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Explanation 1.")).not.toBeVisible();
+    expect(button).toHaveTextContent("4/5 correct");
+  });
+
+  it("can be opened and closed with the keyboard", async () => {
+    api.fetchQuiz.mockResolvedValue(taken(2));
+    const user = userEvent.setup();
+    render(<QuizPanel projectId="p1" week={2} />);
+    const button = await header("2/5 correct");
+    await user.tab();
+    expect(button).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    await user.keyboard(" ");
+    expect(button).toHaveAttribute("aria-expanded", "false");
   });
 });
 
@@ -155,8 +189,8 @@ describe("taking the quiz", () => {
     for (const [i, option] of choices.entries()) await answer(user, i + 1, option);
     await user.click(submit());
     expect(api.submitQuiz).toHaveBeenCalledWith("p1", 2, choices);
-    expect(await screen.findByText(/Quiz result: 3\/5 correct/)).toBeInTheDocument();
-    expect(screen.getByText("Explanation 1.")).toBeInTheDocument();
+    await user.click(await header("3/5 correct"));
+    expect(screen.getByText("Explanation 1.")).toBeVisible();
     expect(screen.queryByRole("form")).not.toBeInTheDocument();
     expect(screen.getAllByText(/^Not correct\./)).toHaveLength(2);
     expect(screen.getAllByText(/^Correct\./)).toHaveLength(3);
@@ -187,7 +221,7 @@ describe("taking the quiz", () => {
     api.fetchQuiz.mockResolvedValue(taken(2));
     for (let q = 1; q <= 5; q++) await answer(user, q, 0);
     await user.click(submit());
-    expect(await screen.findByText(/Quiz result: 2\/5 correct/)).toBeInTheDocument();
+    expect(await header("2/5 correct")).toBeInTheDocument();
   });
 
   it("does not send twice while a submission is in progress", async () => {
@@ -200,7 +234,7 @@ describe("taking the quiz", () => {
     await user.click(submit());
     expect(api.submitQuiz).toHaveBeenCalledTimes(1);
     finish({ ok: true, quiz: taken(5) });
-    expect(await screen.findByText(/Quiz result: 5\/5/)).toBeInTheDocument();
+    expect(await header("5/5 correct")).toBeInTheDocument();
   });
 
   it("explains a network failure without losing the answers", async () => {
@@ -218,8 +252,7 @@ describe("the graded review", () => {
     api.fetchQuiz.mockResolvedValue(taken(4));
     const user = userEvent.setup();
     render(<QuizPanel projectId="p1" week={2} />);
-    await start(user);
-    await screen.findByText(/Quiz result/);
+    await user.click(await header("4/5 correct"));
     expect(screen.getAllByText(/Right answer:/)).toHaveLength(1);
     expect(screen.getByText(/Right answer:/).parentElement).toHaveTextContent("B. Option two 5");
   });

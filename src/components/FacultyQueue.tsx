@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { fetchQueue, type QueueFilter } from "@/lib/api/client";
+import { useState } from "react";
+import type { QueueFilter } from "@/lib/api/client";
 import type { QueueItem } from "@/lib/schemas/review";
 import { quizTag, STATE_BADGE, STATE_LABEL } from "./labels";
 import { Icon } from "./ui";
@@ -34,35 +34,11 @@ function scoreText(item: QueueItem): string {
   return item.officialScore === null ? "No official score" : `Score ${item.officialScore}/100`;
 }
 
-type Load = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; items: QueueItem[] };
-
-export function FacultyQueue() {
+export function FacultyQueue({ items }: { items: QueueItem[] }) {
   const [filter, setFilter] = useState<QueueFilter>("pending_review");
-  const [load, setLoad] = useState<Load>({ status: "loading" });
-  const [attempt, setAttempt] = useState(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchQueue(filter).then(
-      (items) => {
-        if (!cancelled) setLoad({ status: "ready", items });
-      },
-      (error: unknown) => {
-        if (!cancelled) {
-          setLoad({ status: "error", message: error instanceof Error ? error.message : "Could not load the queue." });
-        }
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [filter, attempt]);
-
-  function choose(next: QueueFilter) {
-    if (next === filter) return;
-    setLoad({ status: "loading" });
-    setFilter(next);
-  }
+  const countOf = (value: QueueFilter) => (value === "all" ? items.length : items.filter((i) => i.status === value).length);
+  const shown = filter === "all" ? items : items.filter((i) => i.status === filter);
 
   return (
     <section aria-labelledby="queue-heading" className="space-y-5">
@@ -77,51 +53,38 @@ export function FacultyQueue() {
       </div>
 
       <div role="group" aria-label="Filter by status" className="flex flex-wrap gap-2">
-        {FILTERS.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            aria-pressed={filter === f.value}
-            onClick={() => choose(f.value)}
-            className={`rounded-full border px-4 py-1.5 text-sm font-medium transition duration-150 ${
-              filter === f.value
-                ? "border-accent/60 bg-accent/15 text-accent"
-                : "border-line bg-card text-muted hover:border-primary/50 hover:text-fg"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+        {FILTERS.map((f) => {
+          const active = filter === f.value;
+          return (
+            <button
+              key={f.value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setFilter(f.value)}
+              className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition duration-150 ${
+                active
+                  ? "border-accent bg-accent/20 text-accent ring-1 ring-accent/50"
+                  : "border-line bg-card text-muted hover:border-primary/50 hover:text-fg"
+              }`}
+            >
+              {active && <Icon name="check" className="h-3.5 w-3.5" />}
+              {f.label}
+              <span className={`rounded-full px-1.5 text-xs tabular-nums ${active ? "bg-accent/25" : "bg-canvas/70"}`}>
+                {countOf(f.value)}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      {load.status === "loading" && (
-        <p role="status" className="text-muted">
-          Loading evaluations…
-        </p>
-      )}
-      {load.status === "error" && (
-        <div role="alert" className="alert-danger">
-          <p>Could not load evaluations: {load.message}</p>
-          <button
-            type="button"
-            onClick={() => {
-              setLoad({ status: "loading" });
-              setAttempt((n) => n + 1);
-            }}
-            className="btn-secondary btn-sm mt-3"
-          >
-            Try again
-          </button>
-        </div>
-      )}
-      {load.status === "ready" && load.items.length === 0 && (
+      {shown.length === 0 && (
         <p className="card border-dashed p-8 text-center text-muted">
           {filter === "pending_review" ? "Nothing is waiting for review." : "No evaluations match this filter."}
         </p>
       )}
-      {load.status === "ready" && load.items.length > 0 && (
+      {shown.length > 0 && (
         <ul className="space-y-4">
-          {groupByProject(load.items).map((group) => (
+          {groupByProject(shown).map((group) => (
             <li key={group.projectId}>
               <details className="card group transition duration-150 open:border-primary/40">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl p-5 text-lg font-semibold transition duration-150 hover:bg-card-hover [&::-webkit-details-marker]:hidden">

@@ -7,6 +7,7 @@ import { aiFeedbackText } from "@/lib/review/service";
 import { DecisionRequestSchema, type ReviewDetail } from "@/lib/schemas/review";
 import type { TeacherDecision } from "@/lib/schemas/teacher-decision";
 import { FacultyQuiz } from "./FacultyQuiz";
+import { OfficialDecision } from "./OfficialDecision";
 
 type Load =
   | { status: "loading" }
@@ -155,7 +156,7 @@ function Detail({ detail, onDecided }: { detail: ReviewDetail; onDecided: (d: Te
         <TextList title="AI's feedback for next week" items={e.feedbackForNextWeek} />
       </section>
 
-      <FacultyQuiz evaluationId={e.id} />
+      <FacultyQuiz evaluationId={e.id} week={e.weekNumber} />
 
       <section aria-labelledby="scope-heading" className="card space-y-2 p-6 text-sm">
         <h2 id="scope-heading" className="text-xl font-semibold">
@@ -225,34 +226,22 @@ function TextList({ title, items }: { title: string; items: string[] }) {
 }
 
 function Decided({ decision, suggested }: { decision: TeacherDecision; suggested: number }) {
-  const label = { approve: "Approved", edit: "Edited", reject: "Rejected" }[decision.decision];
+  const status = decision.decision === "approve" ? "approved" : decision.decision === "edit" ? "edited" : "rejected";
   return (
-    <section aria-labelledby="official-heading" className="alert-success space-y-3 p-6 text-sm">
-      <h2 id="official-heading" className="text-xl font-semibold">
-        Official decision: {label}
-      </h2>
-      {decision.approvedScore !== null ? (
-        <p>
-          Official score: <strong>{decision.approvedScore}/100</strong>
-          {decision.approvedScore !== suggested && ` (the AI suggested ${suggested})`}
-        </p>
-      ) : (
-        <p>No official score was given for this week.</p>
-      )}
-      {decision.approvedFeedback && (
-        <div>
-          <p className="font-semibold">Feedback shown to the student</p>
-          <p className="whitespace-pre-line text-fg">{decision.approvedFeedback}</p>
-        </div>
-      )}
+    <OfficialDecision
+      status={status}
+      score={decision.approvedScore}
+      feedback={decision.approvedFeedback}
+      decidedAt={decision.decidedAt}
+      note={decision.approvedScore !== null && decision.approvedScore !== suggested ? `The AI suggested ${suggested}.` : undefined}
+    >
       {decision.comment && (
-        <div>
-          <p className="font-semibold">Your private comment</p>
-          <p className="whitespace-pre-line text-fg">{decision.comment}</p>
+        <div className="border-t border-official/40 pt-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-official-ink">Your private comment</h3>
+          <p className="mt-1 whitespace-pre-line text-official-fg">{decision.comment}</p>
         </div>
       )}
-      <p className="text-xs text-muted">Decided {new Date(decision.decidedAt).toLocaleString()}. This is final.</p>
-    </section>
+    </OfficialDecision>
   );
 }
 

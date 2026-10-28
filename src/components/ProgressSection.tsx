@@ -11,8 +11,10 @@ import {
 } from "@/lib/api/client";
 import type { Checkpoint, Progress } from "@/lib/schemas/checkpoint";
 import type { StudentResult } from "@/lib/schemas/review";
+import { OfficialDecision } from "./OfficialDecision";
 import { QuizPanel } from "./QuizPanel";
-import { Icon, ProgressBar, ScoreCard, WeekScoreBars } from "./ui";
+import { summarizeProject } from "@/lib/dashboard/summary";
+import { Icon, ProgressBar, ScoreCard, StatCard, WeekScoreBars } from "./ui";
 
 type Load =
   | { status: "loading" }
@@ -209,7 +211,7 @@ export function ProgressSection({ projectId, durationWeeks }: { projectId: strin
         <>
           <ProgressSummary
             durationWeeks={durationWeeks}
-            checkpoints={load.progress.checkpoints.length}
+            checkpoints={load.progress.checkpoints}
             evaluations={load.progress.evaluations}
             results={results}
           />
@@ -349,8 +351,9 @@ function WeekMarker({ state, week }: { state: "done" | "waiting" | "open"; week:
 }
 
 /**
- * The big picture: the average of the teacher-approved scores so far (a plain average of
- * real official scores, not a final grade), how far the project has got, and each week's score.
+ * The project dashboard: the average of the teacher-approved scores so far (a plain average of
+ * real official scores, not a final grade), how far the project has got, and each week's score
+ * on one 0-100 scale.
  */
 function ProgressSummary({
   durationWeeks,
@@ -359,54 +362,52 @@ function ProgressSummary({
   results,
 }: {
   durationWeeks: number;
-  checkpoints: number;
+  checkpoints: Checkpoint[];
   evaluations: { weekNumber: number; status: EvaluationStatus }[];
   results: StudentResult[];
 }) {
-  const scored = results.filter((r) => r.officialScore !== null);
-  const average =
-    scored.length === 0
-      ? null
-      : Math.round((scored.reduce((sum, r) => sum + (r.officialScore ?? 0), 0) / scored.length) * 10) / 10;
-  const reviewed = evaluations.filter((e) => e.status !== "pending_review").length;
-  const waiting = evaluations.length - reviewed;
-  const bars = Array.from({ length: durationWeeks }, (_, i) => ({
-    weekNumber: i + 1,
-    score: results.find((r) => r.weekNumber === i + 1)?.officialScore ?? null,
-  }));
+  const summary = summarizeProject({ durationWeeks }, { checkpoints, evaluations }, results);
+  const { average, recorded } = summary;
 
   return (
-    <div className="grid gap-5 lg:grid-cols-3">
-      <div className="lg:col-span-2">
-        <ScoreCard
-          hero
-          label="Average official result"
-          score={average}
-          empty="No reviewed weeks yet"
-          caption={
-            average === null
-              ? "Results appear here after your teacher reviews a week."
-              : `Average of ${scored.length} teacher-approved ${scored.length === 1 ? "week" : "weeks"} out of ${durationWeeks}. This is not a final grade.`
-          }
-        >
-          <WeekScoreBars weeks={bars} />
-        </ScoreCard>
-      </div>
-      <section aria-label="Project progress" className="card flex flex-col justify-between gap-5 p-6">
-        <div>
-          <p className="eyebrow">Weeks recorded</p>
-          <p className="mt-2 flex items-baseline gap-2">
-            <span className="text-5xl font-bold tabular-nums tracking-tight">{checkpoints}</span>
-            <span className="text-xl font-medium text-muted">of {durationWeeks}</span>
-          </p>
+    <div className="space-y-5">
+      <div className="grid gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <ScoreCard
+            hero
+            label="Average official result"
+            score={average}
+            empty="No reviewed weeks yet"
+            caption={
+              average === null
+                ? "Results appear here after your teacher reviews a week."
+                : `Average of ${summary.scores.length} teacher-approved ${summary.scores.length === 1 ? "week" : "weeks"} out of ${durationWeeks}. This is not a final grade.`
+            }
+          >
+            <WeekScoreBars weeks={summary.weeks} />
+          </ScoreCard>
         </div>
-        <ProgressBar percent={(checkpoints / durationWeeks) * 100} label="Weeks recorded as a percentage of the project" />
-        <p className="flex flex-wrap gap-2">
-          <span className="badge-success">{reviewed} reviewed</span>
-          <span className="badge-info">{waiting} waiting for review</span>
-          <span className="badge-neutral">{durationWeeks - checkpoints} not recorded</span>
-        </p>
-      </section>
+        <section aria-label="Project progress" className="card flex flex-col justify-between gap-5 p-6">
+          <div>
+            <p className="eyebrow">Weeks recorded</p>
+            <p className="mt-2 flex items-baseline gap-2">
+              <span className="text-5xl font-bold tabular-nums tracking-tight">{recorded}</span>
+              <span className="text-xl font-medium text-muted">of {durationWeeks}</span>
+            </p>
+          </div>
+          <ProgressBar percent={(recorded / durationWeeks) * 100} label="Weeks recorded as a percentage of the project" />
+          <p className="flex flex-wrap gap-2">
+            <span className="badge-success">{summary.approved} approved</span>
+            <span className="badge-info">{summary.pendingReview} waiting for review</span>
+            <span className="badge-neutral">{summary.unrecorded} not recorded</span>
+          </p>
+        </section>
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard icon="check" label="Approved weeks" value={summary.approved} hint="approved or edited by your teacher" />
+        <StatCard icon="clock" label="Pending reviews" value={summary.pendingReview} hint="waiting for your teacher" />
+        <StatCard icon="repo" label="Unrecorded weeks" value={summary.unrecorded} hint="not recorded yet" />
+      </div>
     </div>
   );
 }
@@ -479,25 +480,14 @@ function OfficialResult({
       </p>
     );
   }
-  if (result.outcome === "rejected") {
-    return (
-      <p className="well mt-3 p-4 text-sm text-fg">
-        Your teacher reviewed this week and did not give an official mark for it.
-      </p>
-    );
-  }
   return (
-    <div className="alert-success mt-3 space-y-2">
-      <p className="text-xl font-bold text-fg">
-        Official result: {result.officialScore}/100
-        <span className="text-sm font-medium text-success"> · set by your teacher</span>
-      </p>
-      {result.feedback && (
-        <div>
-          <p className="font-semibold text-fg">Teacher feedback</p>
-          <p className="whitespace-pre-line text-fg">{result.feedback}</p>
-        </div>
-      )}
+    <div className="mt-3">
+      <OfficialDecision
+        status={result.outcome}
+        score={result.officialScore}
+        feedback={result.feedback}
+        decidedAt={result.decidedAt}
+      />
     </div>
   );
 }

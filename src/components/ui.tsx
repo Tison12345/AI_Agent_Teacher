@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useId, useState, type ReactNode } from "react";
 
 /** The few icons the interface uses, drawn inline so no icon library is needed. */
 const PATHS = {
@@ -11,6 +13,8 @@ const PATHS = {
   repo: "M8 7 3 12l5 5M16 7l5 5-5 5M14 4l-4 16",
   chart: "M4 20V10M10 20V4M16 20v-7M22 20H2",
   folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z",
+  chevron: "m6 9 6 6 6-6",
+  plus: "M12 5v14M5 12h14",
   spark: "M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18",
 } as const;
 
@@ -57,13 +61,30 @@ export function PageHeader({
   );
 }
 
-/** A compact statistic. Secondary to the large score cards. */
-export function StatCard({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
+/** A dashboard statistic: a large number, a short label, an optional icon and a line of context. */
+export function StatCard({
+  label,
+  value,
+  hint,
+  icon,
+}: {
+  label: string;
+  value: ReactNode;
+  hint?: string;
+  icon?: IconName;
+}) {
   return (
-    <div className="card p-4">
-      <p className="eyebrow">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
-      {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
+    <div className="card flex h-full flex-col gap-1 p-5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="eyebrow">{label}</p>
+        {icon && (
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/15 text-accent">
+            <Icon name={icon} className="h-4 w-4" />
+          </span>
+        )}
+      </div>
+      <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight">{value}</p>
+      {hint && <p className="mt-auto pt-1 text-sm text-muted">{hint}</p>}
     </div>
   );
 }
@@ -125,36 +146,108 @@ export function ScoreCard({
   );
 }
 
-/** Bars for the official result of each week. Weeks without one show a dash, not a made-up value. */
-export function WeekScoreBars({
-  weeks,
-}: {
-  weeks: { weekNumber: number; score: number | null; note?: string }[];
-}) {
+
+export type WeekBar = {
+  weekNumber: number;
+  /** The official score, or null when the week has none. A score of 0 is a real score. */
+  score: number | null;
+  /** Why there is no score ("Not recorded", "Awaiting review"). Shown in place of a number. */
+  note?: string;
+};
+
+const AXIS_TICKS = [0, 25, 50, 75, 100];
+
+/**
+ * Horizontal bars for the official result of each week, all on one 0-100 scale. A week with
+ * no result gets an empty dashed track and the reason in words, so it can never be mistaken
+ * for a real score of 0, which gets a marker on the zero line and the number 0.
+ */
+export function WeekScoreBars({ weeks }: { weeks: WeekBar[] }) {
+  const row = "grid grid-cols-[2.25rem_minmax(0,1fr)_6.5rem] items-center gap-3";
   return (
-    <div role="group" className="flex items-end gap-2 sm:gap-3" aria-label="Official result by week">
-      {weeks.map((w) => (
-        <div key={w.weekNumber} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
-          <span className="text-xs font-semibold tabular-nums">{w.score === null ? "–" : w.score}</span>
-          <div className="flex h-24 w-full items-end overflow-hidden rounded-2xl bg-canvas/70">
-            {w.score !== null && (
-              <div
-                className="w-full rounded-2xl"
-                style={{
-                  height: `${Math.max(4, Math.min(100, w.score))}%`,
-                  backgroundImage: "linear-gradient(180deg, var(--color-accent), var(--color-primary))",
-                }}
-              />
-            )}
-          </div>
-          <span className="text-xs text-muted">
-            W{w.weekNumber}
-            <span className="sr-only">
-              {w.score === null ? ` has no official result${w.note ? ` (${w.note})` : ""}` : `: ${w.score} out of 100`}
+    <div role="group" aria-label="Official result by week" className="space-y-2.5">
+      {weeks.map((w) => {
+        const scored = w.score !== null;
+        const percent = scored ? Math.max(0, Math.min(100, w.score as number)) : 0;
+        return (
+          <div key={w.weekNumber} className={row}>
+            <span className="text-xs font-semibold text-muted">
+              W{w.weekNumber}
+              <span className="sr-only">
+                {scored ? `: ${w.score} out of 100` : ` has no official result${w.note ? ` (${w.note})` : ""}`}
+              </span>
             </span>
-          </span>
+            <div
+              aria-hidden="true"
+              className={`relative h-3 overflow-hidden rounded-full ${
+                scored ? "bg-canvas/80" : "border border-dashed border-line bg-transparent"
+              }`}
+            >
+              {scored && percent > 0 && (
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${percent}%`,
+                    backgroundImage: "linear-gradient(90deg, var(--color-primary), var(--color-accent))",
+                  }}
+                />
+              )}
+              {scored && percent === 0 && <div className="absolute inset-y-0 left-0 w-1 rounded-full bg-accent" />}
+            </div>
+            <span
+              aria-hidden="true"
+              className={`text-right text-sm tabular-nums ${scored ? "font-semibold text-fg" : "text-xs text-muted"}`}
+            >
+              {scored ? w.score : (w.note ?? "No result")}
+            </span>
+          </div>
+        );
+      })}
+      <div aria-hidden="true" className={row}>
+        <span />
+        <div className="flex justify-between text-[11px] tabular-nums text-muted">
+          {AXIS_TICKS.map((t) => (
+            <span key={t}>{t}</span>
+          ))}
         </div>
-      ))}
+        <span />
+      </div>
+    </div>
+  );
+}
+
+/** A section whose summary is always visible and whose details open and close. */
+export function Disclosure({
+  summary,
+  children,
+  defaultOpen = false,
+  className = "",
+}: {
+  summary: ReactNode;
+  children: ReactNode;
+  defaultOpen?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const id = useId();
+  return (
+    <div className={className}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-3 rounded-xl text-left transition duration-150 hover:bg-card-hover focus-visible:outline-offset-2"
+      >
+        <span className="min-w-0 flex-1">{summary}</span>
+        <Icon
+          name="chevron"
+          className={`h-5 w-5 shrink-0 text-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      <div id={id} hidden={!open} className="mt-3">
+        {children}
+      </div>
     </div>
   );
 }

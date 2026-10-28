@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createQuiz, fetchQuiz, submitQuiz } from "@/lib/api/client";
 import { QUIZ_QUESTION_COUNT, type QuizView } from "@/lib/schemas/quiz";
+import { Disclosure } from "./ui";
 
 type Phase =
   | { status: "idle" }
@@ -15,6 +16,21 @@ const LETTERS = ["A", "B", "C", "D"];
 /** Student: the quiz for one recorded week. Nothing is requested until the student asks for it. */
 export function QuizPanel({ projectId, week }: { projectId: string; week: number }) {
   const [phase, setPhase] = useState<Phase>({ status: "idle" });
+
+  // A quiz that was already taken shows its result straight away (collapsed). This only reads:
+  // nothing is created until the student asks for it.
+  useEffect(() => {
+    let cancelled = false;
+    fetchQuiz(projectId, week).then(
+      (quiz) => {
+        if (!cancelled && quiz?.state === "taken") setPhase((p) => (p.status === "idle" ? { status: "ready", quiz } : p));
+      },
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, week]);
 
   async function start() {
     setPhase({ status: "loading", creating: false });
@@ -88,7 +104,7 @@ export function QuizPanel({ projectId, week }: { projectId: string; week: number
           onSubmitted={(quiz) => setPhase({ status: "ready", quiz })}
         />
       )}
-      {phase.status === "ready" && phase.quiz.state === "taken" && <QuizReview quiz={phase.quiz} />}
+      {phase.status === "ready" && phase.quiz.state === "taken" && <QuizReview quiz={phase.quiz} week={week} />}
     </div>
   );
 }
@@ -177,14 +193,26 @@ function QuizForm({
   );
 }
 
-/** The graded quiz: score, each answer, the correct one and the explanation. Shared with the faculty page. */
-export function QuizReview({ quiz }: { quiz: Extract<QuizView, { state: "taken" }> }) {
+/**
+ * The graded quiz. Collapsed by default: the header always shows the week, the score and when it
+ * was submitted; opening it shows each answer, the correct one and the explanation. Shared with
+ * the faculty page.
+ */
+export function QuizReview({ quiz, week }: { quiz: Extract<QuizView, { state: "taken" }>; week?: number }) {
+  const submitted = new Date(quiz.submittedAt).toLocaleString();
   return (
-    <div className="space-y-3">
-      <p className="text-base font-semibold" aria-label={`Quiz result ${quiz.correctCount} out of ${quiz.total}`}>
-        Quiz result: {quiz.correctCount}/{quiz.total} correct
-        <span className="font-normal text-muted"> · submitted {new Date(quiz.submittedAt).toLocaleString()}</span>
-      </p>
+    <Disclosure
+      className="well p-3"
+      summary={
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 py-1">
+          <span className="text-sm font-semibold">{week ? `Week ${week} quiz` : "Quiz result"}</span>
+          <span className="badge-primary">
+            {quiz.correctCount}/{quiz.total} correct
+          </span>
+          <span className="badge-neutral">Submitted {submitted}</span>
+        </span>
+      }
+    >
       <ol className="space-y-3">
         {quiz.questions.map((q, qi) => {
           const right = q.chosenIndex === q.correctIndex;
@@ -215,6 +243,6 @@ export function QuizReview({ quiz }: { quiz: Extract<QuizView, { state: "taken" 
           );
         })}
       </ol>
-    </div>
+    </Disclosure>
   );
 }

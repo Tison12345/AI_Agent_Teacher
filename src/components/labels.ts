@@ -16,8 +16,8 @@ export const STATE_BADGE: Record<WeekState, string> = {
   not_recorded: "badge-neutral",
   not_evaluated: "badge-neutral",
   pending_review: "badge-warning",
-  approved: "badge-success",
-  edited: "badge-success",
+  approved: "badge-official",
+  edited: "badge-official",
   rejected: "badge-danger",
 };
 

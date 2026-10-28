@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { fetchProjectOverview } from "@/lib/api/client";
 import type { ProjectOverview as Overview, WeekOverview } from "@/lib/schemas/overview";
 import { quizText, STATE_BADGE, STATE_LABEL } from "./labels";
-import { ProgressBar, ScoreCard, WeekScoreBars } from "./ui";
+import { repoName } from "@/lib/dashboard/summary";
+import { ProgressBar, ScoreCard, StatCard, WeekScoreBars } from "./ui";
 
 type Load =
   | { status: "loading" }
@@ -74,6 +75,8 @@ function Detail({ overview }: { overview: Overview }) {
   const average = scored.length === 0 ? null : Math.round((scored.reduce((a, b) => a + b, 0) / scored.length) * 10) / 10;
   const reviewed = weeks.filter((w) => ["approved", "edited", "rejected"].includes(w.state)).length;
   const waiting = weeks.filter((w) => w.state === "pending_review").length;
+  const approved = weeks.filter((w) => w.state === "approved" || w.state === "edited").length;
+  const unrecorded = weeks.length - recorded;
   const quizzes = weeks.filter((w) => w.quiz.status === "taken");
   return (
     <>
@@ -81,9 +84,13 @@ function Detail({ overview }: { overview: Overview }) {
         <p className="eyebrow">Project overview</p>
         <h1 className="text-3xl font-bold tracking-tight">{project.title}</h1>
         <p className="max-w-3xl text-muted">{project.description}</p>
-        <p className="text-sm text-muted">
-          Repository: {project.repoUrl} · {recorded} of {project.durationWeeks}{" "}
-          {project.durationWeeks === 1 ? "week" : "weeks"} recorded
+        <p className="flex flex-wrap items-center gap-2 pt-1">
+          <span className="badge-neutral" title={project.repoUrl}>
+            Repository: {repoName(project.repoUrl)}
+          </span>
+          <span className="badge-neutral">
+            {recorded} of {project.durationWeeks} {project.durationWeeks === 1 ? "week" : "weeks"} recorded
+          </span>
         </p>
       </header>
 
@@ -101,7 +108,7 @@ function Detail({ overview }: { overview: Overview }) {
             }
           >
             <WeekScoreBars
-              weeks={weeks.map((w) => ({ weekNumber: w.weekNumber, score: w.officialScore, note: STATE_LABEL[w.state] }))}
+              weeks={weeks.map((w) => ({ weekNumber: w.weekNumber, score: w.officialScore, note: chartNote(w) }))}
             />
           </ScoreCard>
         </div>
@@ -121,6 +128,13 @@ function Detail({ overview }: { overview: Overview }) {
             </span>
           </p>
         </section>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard icon="repo" label="Weeks recorded" value={`${recorded}/${project.durationWeeks}`} hint="by the student" />
+        <StatCard icon="check" label="Approved weeks" value={approved} hint="approved or edited" />
+        <StatCard icon="clock" label="Pending reviews" value={waiting} hint="waiting for you" />
+        <StatCard icon="folder" label="Unrecorded weeks" value={unrecorded} hint="not recorded yet" />
       </div>
 
       <p className="alert-warning">
@@ -202,6 +216,14 @@ function WeekCard({ week }: { week: WeekOverview }) {
       )}
     </li>
   );
+}
+
+/** Why a week has no bar on the chart. */
+function chartNote(week: WeekOverview): string {
+  if (week.state === "not_recorded") return "Not recorded";
+  if (week.state === "not_evaluated") return "Not evaluated";
+  if (week.state === "pending_review") return "Awaiting review";
+  return "No mark";
 }
 
 function officialText(week: WeekOverview): string {

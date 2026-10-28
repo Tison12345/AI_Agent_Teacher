@@ -14,7 +14,7 @@ type Load =
  * Faculty: the student's weekly quiz result, next to the AI recommendation. It is separate
  * evidence about understanding and is not part of the AI's score.
  */
-export function FacultyQuiz({ evaluationId }: { evaluationId: string }) {
+export function FacultyQuiz({ evaluationId, week }: { evaluationId: string; week?: number }) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export function FacultyQuiz({ evaluationId }: { evaluationId: string }) {
             The quiz is about the student&apos;s own code changes. It shows whether they can explain what they pushed; it
             does not change the AI&apos;s score.
           </p>
-          <QuizReview quiz={load.quiz} />
+          <QuizReview quiz={load.quiz} week={week} />
         </>
       )}
     </section>

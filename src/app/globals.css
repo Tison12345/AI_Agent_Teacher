@@ -30,6 +30,13 @@
   --color-warning: #fbbf24;
   --color-danger: #fb7185;
 
+  /* The teacher's official decision: its own blue/indigo identity, so it is never mistaken for
+     quiz feedback (green and amber) or a generic success message. */
+  --color-official: #6366f1;
+  --color-official-bg: #182744;
+  --color-official-ink: #a5b4fc;
+  --color-official-fg: #f1f5f9;
+
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -84,6 +91,12 @@ body {
 @utility card-interactive {
   @apply transition duration-150 hover:-translate-y-0.5 hover:border-primary/60 hover:bg-card-hover;
 }
+@utility card-official {
+  @apply rounded-2xl border shadow-lg shadow-black/25;
+  border-color: var(--color-official);
+  background: var(--color-official-bg);
+  color: var(--color-official-fg);
+}
 @utility well {
   @apply rounded-xl border border-line bg-canvas/60;
 }
@@ -137,6 +150,12 @@ body {
 }
 @utility badge-danger {
   @apply inline-flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-2.5 py-0.5 text-xs font-medium text-danger;
+}
+@utility badge-official {
+  @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold;
+  border-color: var(--color-official);
+  background: rgb(99 102 241 / 0.22);
+  color: var(--color-official-ink);
 }
 @utility badge-primary {
   @apply inline-flex items-center gap-1.5 rounded-full border border-primary/50 bg-primary/15 px-2.5 py-0.5 text-xs font-medium text-link;
