@@ -90,7 +90,7 @@ function NavShell({ pathname, session }: { pathname: string | null; session: Ses
   );
 }
 
-/** Who is signed in, and the way out. (Demo sign-in: see docs/DEMO-LOGIN.md.) */
+/** Who is signed in, and the way out. */
 function UserCard({ session, compact = false }: { session: Session; compact?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -106,7 +106,7 @@ function UserCard({ session, compact = false }: { session: Session; compact?: bo
   return (
     <div className={`flex items-center justify-between gap-3 rounded-lg border border-line bg-card/60 ${compact ? "px-3 py-2" : "p-3"}`} data-testid="user-card">
       <p className="min-w-0 text-xs leading-tight">
-        <span className="block truncate text-sm font-semibold text-fg" title={session.email}>{session.email}</span>
+        <span className="block truncate text-sm font-semibold text-fg" title={session.email}>{session.name}</span>
         <span className="block text-muted">{ROLE_LABEL[session.role]}</span>
       </p>
       <button type="button" onClick={handleLogout} disabled={busy} className="btn-secondary btn-sm shrink-0">

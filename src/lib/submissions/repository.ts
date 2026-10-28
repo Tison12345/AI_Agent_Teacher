@@ -111,6 +111,17 @@ export async function listStudentSubmissions(assignmentId: string, studentName: 
   return (data ?? []).map(toStudent);
 }
 
+/** The signed-in student's own submissions for an assignment, found by their account (whatever name they typed). */
+export async function listSubmissionsOfAccount(assignmentId: string, studentId: string): Promise<StudentSubmission[]> {
+  const owned = await getSupabase().from("submissions").select("id").eq("assignment_id", assignmentId).eq("student_id", studentId);
+  if (owned.error) throw new RepositoryError("db_error", owned.error.message);
+  const ids = (owned.data ?? []).map((r) => r.id as string);
+  if (ids.length === 0) return [];
+  const { data, error } = await getSupabase().from("student_submissions").select(STUDENT_COLUMNS).in("id", ids).order("created_at", { ascending: false });
+  if (error) throw new RepositoryError("db_error", error.message);
+  return (data ?? []).map(toStudent);
+}
+
 export async function getStudentSubmission(id: string): Promise<StudentSubmission | null> {
   const { data, error } = await getSupabase().from("student_submissions").select(STUDENT_COLUMNS).eq("id", id).maybeSingle();
   if (error) throw new RepositoryError("db_error", error.message);
@@ -181,6 +192,7 @@ export const supabaseStore: SubmissionStore = {
     const { error } = await getSupabase().from("submissions").insert({
       id: row.id,
       assignment_id: row.assignmentId,
+      student_id: row.studentId,
       student_name: row.studentName,
       file_path: row.filePath,
       file_name: row.fileName,

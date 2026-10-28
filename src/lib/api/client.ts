@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { Session } from "@/lib/auth/session";
+import { SessionSchema, type Session } from "@/lib/auth/session";
+import { StudentDetailSchema, StudentListSchema, type StudentDetail, type StudentList } from "@/lib/students/types";
 import { EvaluationProgressSchema, type EvaluationProgress } from "@/lib/workflow/evaluation/progress";
 import { WorkflowProgressSchema, type WorkflowProgress } from "@/lib/workflow/submission/progress";
 import type { ProjectSubmitResult } from "@/components/ProjectForm";
@@ -403,11 +404,9 @@ export async function uploadAnswers(assignmentId: string, studentName: string, f
   };
 }
 
-/** The submissions made under a typed name for one assignment. */
-export async function fetchMySubmissions(assignmentId: string, studentName: string): Promise<StudentSubmission[]> {
-  const res = await fetch(`/api/assignments/${encodeURIComponent(assignmentId)}/submissions?name=${encodeURIComponent(studentName)}`, {
-    cache: "no-store",
-  });
+/** The signed-in student's own uploads for one assignment. */
+export async function fetchMySubmissions(assignmentId: string): Promise<StudentSubmission[]> {
+  const res = await fetch(`/api/assignments/${encodeURIComponent(assignmentId)}/submissions`, { cache: "no-store" });
   if (!res.ok) throw new Error(await readError(res));
   return z.object({ submissions: z.array(StudentSubmissionSchema) }).parse(await res.json()).submissions;
 }
@@ -490,15 +489,14 @@ export const resumeSubmissionWorkflow = (submissionId: string) => resumeAt(`/api
 export const resumeEvaluationWorkflow = (projectId: string, weekNumber: number) =>
   resumeAt(`/api/projects/${encodeURIComponent(projectId)}/weeks/${weekNumber}/workflow`);
 
-export type LoginResult =
+export type AuthResult =
   | { ok: true; session: Session; redirect: string }
   | { ok: false; message: string; fields?: Record<string, string> };
 
-/** Demo sign-in: a role, an email and the shared demo password. */
-export async function login(input: { role: string; email: string; password: string; next?: string | null }): Promise<LoginResult> {
-  const res = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+async function authRequest(path: string, input: Record<string, unknown>): Promise<AuthResult> {
+  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
   if (res.ok) {
-    const body = z.object({ session: z.object({ role: z.enum(["student", "faculty"]), email: z.string() }), redirect: z.string() }).parse(await res.json());
+    const body = z.object({ session: SessionSchema, redirect: z.string() }).parse(await res.json());
     return { ok: true, session: body.session, redirect: body.redirect };
   }
   const parsed = z
@@ -506,10 +504,34 @@ export async function login(input: { role: string; email: string; password: stri
     .safeParse(await res.json().catch(() => null));
   return parsed.success
     ? { ok: false, message: parsed.data.error.message, fields: parsed.data.error.fields }
-    : { ok: false, message: `Sign-in failed (${res.status}).` };
+    : { ok: false, message: `Request failed (${res.status}).` };
 }
 
-/** Signs out (removes the demo sign-in cookie). */
+/** Signs in with a role, an email and a password. */
+export const login = (input: { role: string; email: string; password: string; next?: string | null }) => authRequest("/api/auth/login", input);
+
+/** Creates an account and signs it in. */
+export const signup = (input: { role: string; fullName: string; email: string; password: string; confirmPassword: string; next?: string | null }) =>
+  authRequest("/api/auth/signup", input);
+
+/** Signs out (removes the sign-in cookie). */
 export async function logout(): Promise<void> {
   await fetch("/api/auth/logout", { method: "POST" });
+}
+
+// ---- Faculty: students -----------------------------------------------------------------------
+
+/** Faculty: the class overview and a summary per student (real records only). */
+export async function fetchStudents(): Promise<StudentList> {
+  const res = await fetch("/api/faculty/students", { cache: "no-store" });
+  if (!res.ok) throw new Error(await readError(res));
+  return StudentListSchema.parse(await res.json());
+}
+
+/** Faculty: one student's projects, weeks, quizzes and assignments. Null when the student does not exist. */
+export async function fetchStudent(id: string): Promise<StudentDetail | null> {
+  const res = await fetch(`/api/faculty/students/${encodeURIComponent(id)}`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ student: StudentDetailSchema }).parse(await res.json()).student;
 }

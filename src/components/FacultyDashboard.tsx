@@ -1,22 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchProjects, fetchQueue } from "@/lib/api/client";
+import { fetchProjects, fetchQueue, fetchStudents } from "@/lib/api/client";
 import type { Project } from "@/lib/schemas/project";
 import type { QueueItem } from "@/lib/schemas/review";
+import type { StudentList as StudentListData } from "@/lib/students/types";
 import { FacultyAnalytics } from "./FacultyAnalytics";
 import { FacultyProjects } from "./FacultyProjects";
 import { FacultyQueue } from "./FacultyQueue";
-import { FacultyStats } from "./FacultyStats";
+import { StudentList, StudentOverviewCards } from "./FacultyStudents";
 
 type Load =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; items: QueueItem[]; projects: Project[] };
+  | { status: "ready"; students: StudentListData; items: QueueItem[]; projects: Project[] };
 
 /**
- * The faculty dashboard. It loads every evaluation and every project once; the summary cards,
- * charts, project list and the filtered queue are all worked out from that real data.
+ * The faculty dashboard, student first: the class overview, then every student (searchable, each opening to their
+ * details and a full profile), and below them the project overview and the review queue. Everything is worked out
+ * from the real records.
  */
 export function FacultyDashboard() {
   const [load, setLoad] = useState<Load>({ status: "loading" });
@@ -24,9 +26,9 @@ export function FacultyDashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchQueue("all"), fetchProjects()]).then(
-      ([items, projects]) => {
-        if (!cancelled) setLoad({ status: "ready", items, projects });
+    Promise.all([fetchStudents(), fetchQueue("all"), fetchProjects()]).then(
+      ([students, items, projects]) => {
+        if (!cancelled) setLoad({ status: "ready", students, items, projects });
       },
       (error: unknown) => {
         if (!cancelled) {
@@ -64,13 +66,21 @@ export function FacultyDashboard() {
     );
   }
 
-  const { items, projects } = load;
+  const { students, items, projects } = load;
   return (
     <div className="space-y-10">
-      <FacultyStats items={items} projects={projects} />
-      <FacultyAnalytics items={items} />
-      <FacultyProjects items={items} projects={projects} />
-      <FacultyQueue items={items} />
+      <StudentOverviewCards overview={students.overview} />
+      <StudentList students={students.students} />
+
+      <div className="space-y-8 border-t border-line pt-10">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-bold tracking-tight">Projects and reviews</h2>
+          <p className="text-sm text-muted">The whole class by project: how each week was scored, and the evaluations waiting for you.</p>
+        </div>
+        <FacultyAnalytics items={items} />
+        <FacultyProjects items={items} projects={projects} />
+        <FacultyQueue items={items} />
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 Students submit a project with a GitHub repository. Gemini turns it into a weekly plan. The project's length (1 to 16 weeks, 12 by default) is chosen when it is created. Each week the student records a checkpoint, the server reads the Git changes since the previous checkpoint, and Gemini writes a *recommended* evaluation. A teacher reviews it and makes the **official** decision. Students see only what the teacher approves.
 
-> **Not ready for public deployment.** The only sign-in is a **demo** one: a Student/Faculty choice, an email and the shared password `1234`, printed on the sign-in page ([docs/DEMO-LOGIN.md](docs/DEMO-LOGIN.md)). It is not security. Anyone who can reach the server can sign in as either role, and much of the API is open. See [Limitations](#limitations-read-before-using).
+> **Not ready for public deployment.** Sign-in and sign-up are lightweight (an email, a password, and a Student or Faculty role; [docs/SIGN-IN.md](docs/SIGN-IN.md)). Emails are not verified, anyone can create a faculty account, and much of the API is open. See [Limitations](#limitations-read-before-using).
 
 > **Workflows.** Assignment marking and the weekly evaluation run as LangGraph.js graphs with saved checkpoints, a pause for faculty approval, bounded retries, and live progress in the pages. See [docs/WORKFLOWS.md](docs/WORKFLOWS.md).
 
@@ -63,6 +63,8 @@ Run the files in `supabase/migrations/` **in order**, once each, in the Supabase
 | `0007_quizzes.sql` | `quizzes` (one per checkpoint), `quiz_attempts` (one per quiz); both immutable |
 | `0008_assignments.sql` | AI assignment evaluation (demo): `assignments`, `submissions`, `submission_decisions`, the `decide_submission()` function, the student-safe views `student_assignments` / `student_submissions`, and a private `submissions` storage bucket |
 | `0009_langgraph_checkpoints.sql` | The `langgraph` schema (workflow checkpoints and run leases) and the restricted role `langgraph_app`. Run it, then set the role's password (see [docs/WORKFLOWS.md](docs/WORKFLOWS.md#setup)) |
+| `0011_student_links.sql` | `projects.owner_id` and `submissions.student_id` (link each project and upload to the student's account, for the faculty dashboard). It also assigns work created before accounts to one student account (see [Faculty dashboard](#faculty-dashboard)) |
+| `0010_app_users.sql` | Sign-in and sign-up accounts (`app_users`: email, role, name, password hash), server-only. Run it before using the sign-in page (see [docs/SIGN-IN.md](docs/SIGN-IN.md)) |
 
 All tables have row-level security enabled with no access for `anon`/`authenticated`; only the server's secret key can read or write.
 
@@ -124,13 +126,22 @@ The interface is a dark theme built from a small set of tokens in `src/app/globa
 - **Shared components** in `src/components/ui.tsx`: `ScoreCard` (large score with a progress bar; says why when there is no score), `ProgressBar`, `WeekScoreBars`, `StatCard`, `PageHeader`, `Icon`. Status is always shown with a text label as well as a colour.
 - The average-score and bar-chart figures are computed from real data only: the teacher's official scores, never the AI's, and a week with no score shows a dash.
 
+## Faculty dashboard
+
+`/faculty` is organised by student. At the top, six numbers for the class: students, projects submitted, assignments submitted, assignments waiting for review, weekly evaluations waiting for review and the average official score. Below them, a searchable list of students (name, email, projects, assignments, pending reviews, average score). Open a student for a short preview, or **Open full profile** (`/faculty/students/[id]`) for their score summary, charts (project-wise, week-wise and assignment marks), every project with its GitHub repository and weekly checkpoint history (AI recommendation next to the official score, quiz result), and every assignment with its status, marks and feedback. Each week and submission links straight to the existing review page to approve, edit or reject. The project overview and review queue are kept below the students.
+
+- **Linked by account.** A project belongs to the student who created it (`projects.owner_id`) and an upload to the student who submitted it (`submissions.student_id`). Both are taken from the signed-in session, never from the browser, and creating either needs a student sign-in. Weekly checkpoints, evaluations and quizzes follow their project.
+- **Official vs AI.** Scores and averages count only faculty-approved results (approved or edited). The AI's recommendation is always shown separately and labelled "not official"; a rejection has no score. Weekly scores are out of 100; assignment marks are turned into a percentage of that assignment's total. The class average is the mean of each student's own average, over students who have an approved score.
+- **Old work has no owner.** Projects and uploads made before accounts existed could not be linked reliably (they had no owner, and a submission only had a typed name). Migration 0011 assigns them to one account (`student@gmail.com`, change the email in the file to use another); if that account does not exist they are shown as an "Unassigned (before accounts)" group. Nothing is guessed.
+- **Not changed:** the evaluation logic, the LangGraph workflows, the decision functions and the approval rules. The dashboard only reads.
+
 ## Testing
 
 `npm test` runs unit, route, component and end-to-end workflow tests (`src/e2e/workflow.test.ts` drives the real route handlers from project creation to the student seeing the teacher's score, with fake GitHub and Gemini). The results are in the final test report delivered with this phase.
 
 ## Limitations (read before using)
 
-1. **Demo sign-in only, no real authentication.** Student pages need the student role, and faculty pages and `/api/faculty/*` need the faculty role, but both roles share the public password `1234`, the cookie is not signed, and the rest of the API (`/api/projects/*`, `/api/assignments/*`, `/api/submissions/*`, `…/weeks/[week]/evaluation`, which returns AI scores) is open. Students are not separated from each other; the student dashboard lists every project. Real authentication (Supabase Auth with student/teacher roles) is the first thing to add before real use; the role rules are in one place, `src/lib/auth/session.ts`, and the gate is `src/proxy.ts`.
+1. **Lightweight sign-in, not production authentication.** Student pages need the student role, and faculty pages and `/api/faculty/*` need the faculty role, but emails are not verified, anyone can sign up as faculty, there is no password reset or rate limiting, and the rest of the API (`/api/projects/*`, `/api/assignments/*`, `/api/submissions/*`, `…/weeks/[week]/evaluation`, which returns AI scores) is open. Students are not separated from each other; the student dashboard lists every project. Real authentication (Supabase Auth with student/teacher roles) is the first thing to add before real use; the role rules are in one place, `src/lib/auth/session.ts`, and the gate is `src/proxy.ts`.
 2. **AI scores are not trustworthy on their own.** In testing the model scored a complete week 100/100 twice and reports "high" confidence even on very small diffs. It sees changed lines only, never runs code, and cannot judge whether the program works or who wrote it. Teacher review is essential.
 3. **Decisions are final.** There is no revise-with-history workflow.
 4. **Gemini quota.** On the free tier, a daily limit per model can be exhausted by a handful of evaluations. The app reports a daily limit differently from a per-minute one, but cannot fix either.
@@ -138,7 +149,7 @@ The interface is a dark theme built from a small set of tokens in `src/app/globa
 6. **Force-push.** If a student rewrites history before the evaluation is generated, the commit may vanish and the evaluation fails with a clear message. Evaluate right after recording.
 7. **Duplicate calls.** Simultaneous requests can each spend one Gemini call; only one result is ever stored.
 8. **Duration is chosen once.** A project's length (1 to 16 weeks) cannot be changed after it is created, and each project has one plan with no regeneration.
-9. **The quiz is only as good as the questions.** Gemini writes them from changed lines it can see, and has not run the code. There is no check that a question is actually answerable from the diff beyond the format rules, no way for a teacher to edit or remove a question, and one attempt means a student who closes the page mid-quiz cannot continue it. A week with no readable code (only images, generated or deleted files) gets no quiz. With only the demo sign-in, anyone with the project link can take or submit a student's quiz.
+9. **The quiz is only as good as the questions.** Gemini writes them from changed lines it can see, and has not run the code. There is no check that a question is actually answerable from the diff beyond the format rules, no way for a teacher to edit or remove a question, and one attempt means a student who closes the page mid-quiz cannot continue it. A week with no readable code (only images, generated or deleted files) gets no quiz. With only the lightweight sign-in, anyone with the project link can take or submit a student's quiz.
 10. **Not checked:** the app has not been deployed or load-tested, and the pages have not been audited with browser accessibility tooling (see the final report for what was and was not checked).
 
 ## AI assignment evaluation (demo, built in phases)
@@ -154,13 +165,13 @@ A small, separate feature for a college demonstration: faculty create assignment
 
 Marking uses the same Gemini key and model as the rest of the app. Marks can differ between runs of the same answer, which is why the teacher decides.
 
-Demo limits, on purpose: **only a demo sign-in** (the shared password `1234`, printed on the page, so anyone can sign in as faculty and create or approve), students are identified only by a typed name, scanned documents are not supported (they will be reported as needing OCR), and the data in the demo is fictional.
+Demo limits, on purpose: **only a lightweight sign-in** (emails are not verified and anyone can sign up as faculty, so anyone can create or approve), students are identified only by a typed name, scanned documents are not supported (they will be reported as needing OCR), and the data in the demo is fictional.
 
 ## Deployment notes
 
 - Any Node host for Next.js 16 works (e.g. Vercel). Set the server variables (including `DATABASE_URL`) in the host's environment settings, not in the repository.
 - Plan generation can take up to ~60 seconds (`maxDuration = 60`). Evaluations and assignment marking run in the background after the response (up to 10 minutes per run); on a host that stops functions earlier, a run can stall, and the page offers **Continue**.
-- Run all nine migrations on the production Supabase project before first use.
+- Run all eleven migrations on the production Supabase project before first use.
 - Quiz creation takes up to ~60 seconds like evaluation (`maxDuration = 60`), and uses one more Gemini call per week.
 - **Do not expose a deployment publicly until authentication exists** (limitation 1).
 - Rotate any key that has ever been pasted into a chat, ticket or commit.

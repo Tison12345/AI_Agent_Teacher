@@ -1,4 +1,5 @@
 import { errorResponse, handleUnexpected } from "@/lib/api/errors";
+import { requireStudent } from "@/lib/auth/server";
 import { createProject, listProjects } from "@/lib/projects/repository";
 import {
   DEFAULT_DURATION_WEEKS,
@@ -14,6 +15,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const student = await requireStudent("create a project");
+  if (student instanceof Response) return student;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -42,7 +46,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const project = await createProject(parsed.data);
+    const project = await createProject(parsed.data, student.id);
     return Response.json({ project }, { status: 201 });
   } catch (error) {
     return handleUnexpected(error);

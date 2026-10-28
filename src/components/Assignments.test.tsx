@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   fetchFacultyAssignment: vi.fn(),
   createAssignment: vi.fn(),
   fetchFacultySubmissions: vi.fn(),
+  fetchMySubmissions: vi.fn(),
 }));
 vi.mock("@/lib/api/client", () => api);
 
@@ -44,6 +45,7 @@ const faculty: FacultyAssignment = {
 beforeEach(() => {
   vi.clearAllMocks();
   api.fetchFacultySubmissions.mockResolvedValue([]);
+  api.fetchMySubmissions.mockResolvedValue([]);
 });
 
 describe("StudentAssignments", () => {
@@ -95,7 +97,7 @@ describe("FacultyAssignments", () => {
   it("shows the demo notice, summary cards, and each assignment with its submission count", async () => {
     api.fetchFacultyAssignments.mockResolvedValue([summary]);
     render(<FacultyAssignments />);
-    expect(screen.getByText(/Demo build, demo sign-in/)).toBeInTheDocument();
+    expect(screen.getByText(/Demo build, lightweight sign-in/)).toBeInTheDocument();
     const cards = await screen.findByRole("region", { name: "Summary" });
     expect(cards).toHaveTextContent("Assignments1");
     expect(cards).toHaveTextContent("Questions2");
@@ -167,7 +169,7 @@ describe("FacultyAssignmentDetail", () => {
     api.fetchFacultyAssignment.mockResolvedValue(faculty);
     render(<FacultyAssignmentDetail id={ID} />);
     expect(await screen.findByRole("heading", { level: 1, name: "Loops and arrays" })).toBeInTheDocument();
-    expect(screen.getByText(/Demo build, demo sign-in/)).toBeInTheDocument();
+    expect(screen.getByText(/Demo build, lightweight sign-in/)).toBeInTheDocument();
     expect(screen.getByText("It repeats a block of code.")).toBeInTheDocument();
     expect(screen.getByText("Reference answer (faculty only)")).toBeInTheDocument();
     expect(screen.getAllByText("Reference answer (faculty only)")).toHaveLength(1); // only question 1 has one

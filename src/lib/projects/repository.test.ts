@@ -52,8 +52,18 @@ describe("projects repository", () => {
       description: row.description,
       repo_url: row.repo_url,
       duration_weeks: 12,
+      owner_id: null,
     });
     expect(project).toMatchObject({ id: row.id, repoUrl: row.repo_url, durationWeeks: 12 });
+  });
+
+  it("stores the owner's account id when there is one", async () => {
+    result = { data: row, error: null };
+    await createProject(
+      { title: row.title, description: row.description, repoUrl: row.repo_url, durationWeeks: 12 },
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(calls.insert[0]).toMatchObject({ owner_id: "11111111-1111-4111-8111-111111111111" });
   });
 
   it("lists projects (empty list is fine)", async () => {

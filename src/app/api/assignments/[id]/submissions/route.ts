@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { errorResponse, handleUnexpected } from "@/lib/api/errors";
 import { getStudentAssignment } from "@/lib/assignments/repository";
+import { requireStudent } from "@/lib/auth/server";
 import { checkUpload, MAX_UPLOAD_BYTES } from "@/lib/submissions/file";
 import { submissionErrorResponse } from "@/lib/submissions/http";
-import { defaultSubmissionDeps, getStudentSubmission, listStudentSubmissions } from "@/lib/submissions/repository";
+import { defaultSubmissionDeps, getStudentSubmission, listSubmissionsOfAccount } from "@/lib/submissions/repository";
 import { submitAnswers } from "@/lib/submissions/service";
 import { startInBackground } from "@/lib/workflow/submission";
 
@@ -16,21 +17,26 @@ const NameSchema = z
   .min(2, "Enter your name (at least 2 characters).")
   .max(80, "Your name must be at most 80 characters.");
 
-/** A student's own submissions, found by the name they typed. Demo build: the name is not a login. */
-export async function GET(request: Request, ctx: RouteContext<"/api/assignments/[id]/submissions">) {
+/** The signed-in student's own uploads for this assignment, found by their account, never by a typed name. */
+export async function GET(_request: Request, ctx: RouteContext<"/api/assignments/[id]/submissions">) {
+  const student = await requireStudent("see your submissions");
+  if (student instanceof Response) return student;
   const { id } = await ctx.params;
   if (!z.uuid().safeParse(id).success) return errorResponse(400, "invalid_id", "Assignment id must be a valid UUID.");
-  const name = NameSchema.safeParse(new URL(request.url).searchParams.get("name") ?? "");
-  if (!name.success) return errorResponse(400, "validation_failed", name.error.issues[0].message, { studentName: name.error.issues[0].message });
   try {
-    return Response.json({ submissions: await listStudentSubmissions(id, name.data) });
+    return Response.json({ submissions: await listSubmissionsOfAccount(id, student.id) });
   } catch (error) {
     return handleUnexpected(error);
   }
 }
 
-/** Receives the student's file (multipart: studentName, file), stores it and starts its workflow (read, mark, review). */
+/**
+ * Receives the signed-in student's file (multipart: studentName, file), stores it linked to the student's account and
+ * starts its workflow (read, mark, review).
+ */
 export async function POST(request: Request, ctx: RouteContext<"/api/assignments/[id]/submissions">) {
+  const student = await requireStudent("submit answers");
+  if (student instanceof Response) return student;
   const { id } = await ctx.params;
   if (!z.uuid().safeParse(id).success) return errorResponse(400, "invalid_id", "Assignment id must be a valid UUID.");
 
@@ -65,7 +71,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/assignments
     }
 
     const submissionId = await submitAnswers(
-      { assignmentId: id, studentName: name.data, fileName: upload.fileName, bytes: upload.bytes, type: upload.type },
+      { assignmentId: id, studentId: student.id, studentName: name.data, fileName: upload.fileName, bytes: upload.bytes, type: upload.type },
       defaultSubmissionDeps(),
     );
     const submission = await getStudentSubmission(submissionId);

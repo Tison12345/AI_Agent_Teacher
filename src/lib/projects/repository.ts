@@ -45,7 +45,11 @@ function toProject(row: unknown): Project {
   return project.data;
 }
 
-export async function createProject(input: ProjectFormValues): Promise<Project> {
+/**
+ * `ownerId` is the student's account (app_users.id), never sent to the browser. The create route always passes it
+ * (it requires a student sign-in); it is only null for rows made without an account, such as in tests.
+ */
+export async function createProject(input: ProjectFormValues, ownerId: string | null = null): Promise<Project> {
   const { data, error } = await getSupabase()
     .from("projects")
     .insert({
@@ -53,6 +57,7 @@ export async function createProject(input: ProjectFormValues): Promise<Project> 
       description: input.description,
       repo_url: input.repoUrl,
       duration_weeks: input.durationWeeks,
+      owner_id: ownerId,
     })
     .select(COLUMNS)
     .single();

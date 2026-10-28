@@ -1,11 +1,9 @@
-import { cookies } from "next/headers";
-import { errorResponse } from "@/lib/api/errors";
-import { checkLogin, safeNext, serializeSession, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from "@/lib/auth/session";
+import { errorResponse, handleUnexpected } from "@/lib/api/errors";
+import { authResponse } from "@/lib/auth/http";
+import { signIn } from "@/lib/auth/service";
+import { userStore } from "@/lib/auth/users";
 
-/**
- * DEMO-ONLY sign-in: a role, an email and the shared demo password. Sets a cookie saying who signed in. There is no
- * account store and nothing is written to the database. See lib/auth/session.ts.
- */
+/** Signs in with a role, an email and a password. Sets a signed cookie. See lib/auth/session.ts. */
 export async function POST(request: Request) {
   let body: unknown;
   try {
@@ -13,20 +11,9 @@ export async function POST(request: Request) {
   } catch {
     return errorResponse(400, "invalid_json", "The request body must be valid JSON.");
   }
-
-  const checked = checkLogin(body);
-  if (!checked.ok) {
-    const wrongPassword = checked.fields.password === "Wrong password.";
-    return errorResponse(wrongPassword ? 401 : 400, wrongPassword ? "invalid_credentials" : "validation_failed", wrongPassword ? "Wrong password." : "Please fix the highlighted fields.", checked.fields);
+  try {
+    return await authResponse(await signIn(body, userStore), (body as { next?: unknown } | null)?.next);
+  } catch (error) {
+    return handleUnexpected(error);
   }
-
-  (await cookies()).set(SESSION_COOKIE, serializeSession(checked.session), {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_MAX_AGE_SECONDS,
-    secure: process.env.NODE_ENV === "production",
-  });
-  const next = (body as { next?: unknown }).next;
-  return Response.json({ session: checked.session, redirect: safeNext(typeof next === "string" ? next : null, checked.session.role) });
 }

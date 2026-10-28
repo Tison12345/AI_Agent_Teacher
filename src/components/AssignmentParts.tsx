@@ -5,8 +5,9 @@ import { Disclosure } from "./ui";
 export function OpenAccessNotice() {
   return (
     <p className="alert-warning text-sm">
-      <strong>Demo build, demo sign-in.</strong> Both roles share the password 1234, so anyone who reads the sign-in page can
-      create assignments and approve marks. The student name is just typed text, not an account. For demonstration only.
+      <strong>Demo build, lightweight sign-in.</strong> Emails are not verified and anyone can sign up as faculty, so anyone can
+      create assignments and approve marks. A student&apos;s submissions are found by the name typed on the upload form. For
+      demonstration only.
     </p>
   );
 }

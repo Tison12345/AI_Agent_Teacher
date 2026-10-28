@@ -1,8 +1,7 @@
-import { cookies } from "next/headers";
-import { SESSION_COOKIE } from "@/lib/auth/session";
+import { endSession } from "@/lib/auth/cookie";
 
-/** Signs out (demo sign-in): removes the cookie. */
+/** Signs out: removes the cookie. */
 export async function POST() {
-  (await cookies()).delete(SESSION_COOKIE);
+  await endSession();
   return Response.json({ ok: true });
 }

@@ -6,6 +6,18 @@ const repo = vi.hoisted(() => ({
   listProjects: vi.fn(),
   getProject: vi.fn(),
 }));
+const auth = vi.hoisted(() => ({
+  session: { id: "11111111-1111-4111-8111-111111111111", role: "student", email: "asha.fictional@gmail.com", name: "Asha Fictional" } as { id: string; role: string; email: string; name: string } | null,
+}));
+// The signed-in user, as the sign-in cookie would give: a student by default.
+vi.mock("@/lib/auth/server", async () => {
+  const { errorResponse } = await import("@/lib/api/errors");
+  return {
+    getSession: async () => auth.session,
+    requireStudent: async (action: string) =>
+      !auth.session ? errorResponse(401, "unauthorized", `Sign in as a student to ${action}.`) : auth.session.role !== "student" ? errorResponse(403, "forbidden", `Only students can ${action}.`) : auth.session,
+  };
+});
 vi.mock("@/lib/projects/repository", () => repo);
 vi.mock("@/lib/db/supabase", () => ({
   StorageConfigError: class StorageConfigError extends Error {},
@@ -33,7 +45,28 @@ const post = (body: unknown) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  auth.session = { id: "11111111-1111-4111-8111-111111111111", role: "student", email: "asha.fictional@gmail.com", name: "Asha Fictional" };
   vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+describe("POST /api/projects needs a student sign-in", () => {
+  const body = { title: "Smart Attendance", description: "A system that marks attendance using faces.", repoUrl: "https://github.com/octocat/hello-world" };
+
+  it("links the new project to the signed-in student's account, taken from the session and never from the body", async () => {
+    repo.createProject.mockResolvedValue(project);
+    const res = await post({ ...body, ownerId: "99999999-9999-4999-8999-999999999999" });
+    expect(res.status).toBe(201);
+    expect(repo.createProject.mock.calls[0][1]).toBe("11111111-1111-4111-8111-111111111111");
+    expect(JSON.stringify(await res.json())).not.toMatch(/owner/i); // the owner is never sent back
+  });
+
+  it("refuses a visitor who is not signed in (401) and a faculty user (403), creating nothing", async () => {
+    auth.session = null;
+    expect((await post(body)).status).toBe(401);
+    auth.session = { id: "22222222-2222-4222-8222-222222222222", role: "faculty", email: "dr.rao@college.edu", name: "Dr Rao" };
+    expect((await post(body)).status).toBe(403);
+    expect(repo.createProject).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/projects", () => {
@@ -47,14 +80,14 @@ describe("POST /api/projects", () => {
     repo.createProject.mockResolvedValue({ ...project, durationWeeks: 4 });
     const res = await post({ ...base, durationWeeks: 4 });
     expect(res.status).toBe(201);
-    expect(repo.createProject).toHaveBeenCalledWith(expect.objectContaining({ durationWeeks: 4 }));
+    expect(repo.createProject).toHaveBeenCalledWith(expect.objectContaining({ durationWeeks: 4 }), "11111111-1111-4111-8111-111111111111");
     expect((await res.json()).project.durationWeeks).toBe(4);
   });
 
   it("uses 12 weeks when no duration is given", async () => {
     repo.createProject.mockResolvedValue(project);
     expect((await post(base)).status).toBe(201);
-    expect(repo.createProject).toHaveBeenCalledWith(expect.objectContaining({ durationWeeks: 12 }));
+    expect(repo.createProject).toHaveBeenCalledWith(expect.objectContaining({ durationWeeks: 12 }), "11111111-1111-4111-8111-111111111111");
   });
 
   it.each([0, 17, 99, -1, 1.5, "8", null, true])("rejects a duration of %j and creates nothing", async (durationWeeks) => {

@@ -32,8 +32,7 @@ function storeName(name: string) {
 type List = { status: "idle" } | { status: "loading" } | { status: "error"; message: string } | { status: "ready"; items: StudentSubmission[] };
 
 /**
- * Student: upload answers as a PDF or DOCX, and see the submissions made under the typed name.
- * Demo build: the name is just text, so anyone typing it sees those submissions.
+ * Student: upload answers as a PDF or DOCX, and see their own uploads for this assignment (found by account).
  */
 export function StudentSubmitSection({
   assignmentId,
@@ -47,19 +46,17 @@ export function StudentSubmitSection({
   // This component only mounts after the assignment has loaded in the browser, so reading the stored name
   // here cannot disagree with the server-rendered page.
   const [name, setName] = useState(readStoredName);
-  const [shownName, setShownName] = useState(() => (readStoredName().trim().length >= 2 ? readStoredName().trim() : "")); // the name the list below is for
   const [file, setFile] = useState<File | null>(null);
   const [fields, setFields] = useState<{ studentName?: string; file?: string }>({});
   const [message, setMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [list, setList] = useState<List>(() => (readStoredName().trim().length >= 2 ? { status: "loading" } : { status: "idle" }));
+  const [list, setList] = useState<List>({ status: "loading" });
   const [reload, setReload] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (shownName.length < 2) return;
     let cancelled = false;
-    fetchMySubmissions(assignmentId, shownName).then(
+    fetchMySubmissions(assignmentId).then(
       (items) => {
         if (!cancelled) setList({ status: "ready", items });
       },
@@ -70,7 +67,7 @@ export function StudentSubmitSection({
     return () => {
       cancelled = true;
     };
-  }, [assignmentId, shownName, reload]);
+  }, [assignmentId, reload]);
 
   // While a submission is still being read or marked, look again every few seconds.
   const stillWorking = list.status === "ready" && list.items.some((s) => s.status === "processing");
@@ -79,15 +76,6 @@ export function StudentSubmitSection({
     const timer = setTimeout(() => setReload((n) => n + 1), POLL_MS);
     return () => clearTimeout(timer);
   }, [stillWorking, reload]);
-
-  function showSubmissionsFor(value: string) {
-    const trimmed = value.trim();
-    if (trimmed.length >= 2 && trimmed !== shownName) {
-      storeName(trimmed);
-      setList({ status: "loading" });
-      setShownName(trimmed);
-    }
-  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -109,10 +97,7 @@ export function StudentSubmitSection({
         setFile(null);
         if (fileInput.current) fileInput.current.value = "";
         storeName(name.trim());
-        if (name.trim() !== shownName) {
-          setList({ status: "loading" });
-          setShownName(name.trim());
-        } else setReload((n) => n + 1);
+        setReload((n) => n + 1);
       } else {
         setFields(result.fields ?? {});
         if (!result.fields?.file && !result.fields?.studentName) setMessage(result.message);
@@ -158,11 +143,7 @@ export function StudentSubmitSection({
               value={name}
               aria-invalid={Boolean(fields.studentName)}
               onChange={(e) => setName(e.target.value)}
-              onBlur={() => showSubmissionsFor(name)}
             />
-            <p className="mt-1 text-xs text-muted">
-              Demo only: this is typed text, not a login. Use the same name each time to see your submissions.
-            </p>
             {fields.studentName && (
               <p role="alert" className="mt-1 text-sm text-danger">
                 {fields.studentName}
@@ -207,10 +188,7 @@ export function StudentSubmitSection({
 
       <div className="space-y-3">
         <h2 className="text-lg font-semibold">My submissions</h2>
-        {shownName.length < 2 && (
-          <p className="card border-dashed p-6 text-center text-muted">Enter your name above to see your submissions.</p>
-        )}
-        {shownName.length >= 2 && list.status === "loading" && (
+        {list.status === "loading" && (
           <p role="status" className="text-muted">
             Loading your submissions…
           </p>
@@ -223,12 +201,10 @@ export function StudentSubmitSection({
             </button>
           </div>
         )}
-        {shownName.length >= 2 && list.status === "ready" && list.items.length === 0 && (
-          <p className="card border-dashed p-6 text-center text-muted">
-            No submissions under &ldquo;{shownName}&rdquo; yet.
-          </p>
+        {list.status === "ready" && list.items.length === 0 && (
+          <p className="card border-dashed p-6 text-center text-muted">You have not uploaded anything for this assignment yet.</p>
         )}
-        {shownName.length >= 2 && list.status === "ready" && list.items.length > 0 && (
+        {list.status === "ready" && list.items.length > 0 && (
           <ul className="space-y-3">
             {list.items.map((s) => (
               <SubmissionCard
@@ -267,7 +243,9 @@ function SubmissionCard({
         <p className="min-w-0 break-all font-semibold">{s.fileName}</p>
         <span className={status.badge}>{status.label}</span>
       </div>
-      <p className="text-xs text-muted">Submitted {new Date(s.createdAt).toLocaleString()}</p>
+      <p className="text-xs text-muted">
+        <span className="font-medium text-fg">Uploaded</span> {new Date(s.createdAt).toLocaleString()}
+      </p>
 
       {(s.status === "processing" || s.status === "awaiting_review") && (
         <WorkflowProgress submissionId={s.id} status={s.status} onStateChange={onWorkflowChange} />

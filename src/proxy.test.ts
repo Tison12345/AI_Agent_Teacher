@@ -1,15 +1,22 @@
 // @vitest-environment node
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
-import { serializeSession, SESSION_COOKIE, type Session } from "@/lib/auth/session";
+import { beforeAll, describe, expect, it } from "vitest";
+import { SESSION_COOKIE, type Session } from "@/lib/auth/session";
+import { signSession } from "@/lib/auth/token";
 import { proxy } from "./proxy";
 
-const student: Session = { role: "student", email: "asha.fictional@gmail.com" };
-const faculty: Session = { role: "faculty", email: "dr.rao@college.edu" };
+const SECRET = "proxy-test-secret-0123456789";
+const student: Session = { id: "11111111-1111-4111-8111-111111111111", role: "student", email: "asha.fictional@gmail.com", name: "Asha Fictional" };
+const faculty: Session = { id: "22222222-2222-4222-8222-222222222222", role: "faculty", email: "dr.rao@college.edu", name: "Dr Rao" };
 
+beforeAll(() => {
+  process.env.AUTH_SECRET = SECRET;
+});
+
+/** `session` is a user to sign in as, or the raw cookie value to send. */
 function call(path: string, session?: Session | string) {
   const headers: Record<string, string> = {};
-  if (session) headers.cookie = `${SESSION_COOKIE}=${typeof session === "string" ? session : serializeSession(session)}`;
+  if (session) headers.cookie = `${SESSION_COOKIE}=${typeof session === "string" ? session : signSession(session, SECRET)}`;
   return proxy(new NextRequest(`http://localhost:3000${path}`, { headers }));
 }
 const location = (res: Response) => (res.headers.get("location") ? new URL(res.headers.get("location")!) : null);
@@ -59,16 +66,31 @@ describe("faculty pages and the faculty API", () => {
   });
 });
 
-describe("a cookie that is not ours", () => {
-  it.each(["student", "%7B%7D", "garbage", encodeURIComponent('{"role":"admin","email":"a@b.co"}'), encodeURIComponent('{"role":"faculty","name":"Dr Rao"}')])("%s does not sign anyone in", (value) => {
+describe("a cookie that is not a genuine sign-in", () => {
+  const forgedAsFaculty = Buffer.from(JSON.stringify({ ...faculty, exp: 4_000_000_000 })).toString("base64url");
+
+  it.each([
+    ["a plain role", "faculty"],
+    ["old unsigned JSON", encodeURIComponent(JSON.stringify(faculty))],
+    ["a payload with no signature", forgedAsFaculty],
+    ["a payload with a made-up signature", `${forgedAsFaculty}.AAAA`],
+    ["a student's signature moved onto a faculty payload", `${forgedAsFaculty}.${signSession(student, SECRET).split(".")[1]}`],
+    ["a cookie signed with another secret", signSession(faculty, "another-secret-0123456789")],
+  ])("%s does not sign anyone in", async (_label, value) => {
     expect(location(call("/faculty", value))!.pathname).toBe("/login");
+    expect((call("/api/faculty/evaluations", value)).status).toBe(401);
+  });
+
+  it("an expired sign-in does not work", () => {
+    const old = signSession(faculty, SECRET, Date.now() - 9 * 60 * 60 * 1000);
+    expect(location(call("/faculty", old))!.pathname).toBe("/login");
   });
 });
 
 describe("the sign-in page", () => {
   it("is open to a signed-out visitor", () => {
     expect(passes(call("/login"))).toBe(true);
-    expect(passes(call("/login?next=/student&role=student"))).toBe(true);
+    expect(passes(call("/login?next=/student&role=student&mode=signup"))).toBe(true);
   });
 
   it("sends a signed-in user to their dashboard", () => {

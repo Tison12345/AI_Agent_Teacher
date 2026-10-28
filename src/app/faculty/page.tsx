@@ -9,7 +9,7 @@ export default function FacultyPage() {
       <PageHeader
         eyebrow="Faculty"
         title="Faculty Dashboard"
-        description="Review each week's AI recommendation, check the student's quiz result and set the official score."
+        description="See how each student is doing across projects, weekly evaluations, quizzes and assignments, and review what is waiting for you."
       />
       <FacultyDashboard />
     </div>

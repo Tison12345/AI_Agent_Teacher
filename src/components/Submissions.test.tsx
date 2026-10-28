@@ -51,36 +51,24 @@ beforeEach(() => {
 describe("StudentSubmitSection", () => {
   const setup = () => ({ user: userEvent.setup(), ...render(<StudentSubmitSection assignmentId={A} maxMarks={15} />) });
 
-  it("asks for the name first and says the name is not a login", () => {
-    setup();
-    expect(screen.getByText(/this is typed text, not a login/i)).toBeInTheDocument();
-    expect(screen.getByText("Enter your name above to see your submissions.")).toBeInTheDocument();
-    expect(api.fetchMySubmissions).not.toHaveBeenCalled();
-  });
-
-  it("shows the submissions for the typed name once the name is entered, and remembers it", async () => {
+  it("loads the student's own uploads by account, without asking for a name first", async () => {
     api.fetchMySubmissions.mockResolvedValue([mine({ status: "awaiting_review" })]);
-    const { user } = setup();
-    await user.type(screen.getByLabelText("Your name"), "Asha Fictional");
-    await user.tab();
+    setup();
     expect(await screen.findByText("answers.pdf")).toBeInTheDocument();
-    expect(api.fetchMySubmissions).toHaveBeenCalledWith(A, "Asha Fictional");
+    expect(api.fetchMySubmissions).toHaveBeenCalledWith(A);
+    expect(screen.getByText("Uploaded")).toBeInTheDocument();
     expect(screen.getByText("Awaiting faculty review", { selector: "span" })).toBeInTheDocument();
-    expect(window.localStorage.getItem("coLearning.studentName")).toBe("Asha Fictional");
   });
 
-  it("uses the remembered name straight away", async () => {
+  it("remembers the typed name for the next upload", () => {
     window.localStorage.setItem("coLearning.studentName", "Asha Fictional");
-    api.fetchMySubmissions.mockResolvedValue([mine()]);
     setup();
     expect(screen.getByLabelText("Your name")).toHaveValue("Asha Fictional");
-    expect(await screen.findByText("answers.pdf")).toBeInTheDocument();
   });
 
-  it("says when nothing has been submitted under the name", async () => {
-    window.localStorage.setItem("coLearning.studentName", "Asha Fictional");
+  it("says when nothing has been uploaded yet", async () => {
     setup();
-    expect(await screen.findByText(/No submissions under/)).toBeInTheDocument();
+    expect(await screen.findByText(/You have not uploaded anything/)).toBeInTheDocument();
   });
 
   it("checks the name and the file before sending anything", async () => {
@@ -268,7 +256,7 @@ describe("FacultySubmissionDetail", () => {
     const user = userEvent.setup();
     render(<FacultySubmissionDetail id={S} />);
     expect(await screen.findByRole("heading", { level: 1, name: "Asha Fictional" })).toBeInTheDocument();
-    expect(screen.getByText(/Demo build, demo sign-in/)).toBeInTheDocument();
+    expect(screen.getByText(/Demo build, lightweight sign-in/)).toBeInTheDocument();
     const download = screen.getByRole("link", { name: /Download the original/ });
     expect(download).toHaveAttribute("href", "https://example.test/signed");
     expect(download).toHaveAttribute("rel", "noopener noreferrer");

@@ -2,7 +2,7 @@ import { errorResponse, handleUnexpected } from "@/lib/api/errors";
 import { createAssignment, listFacultyAssignments } from "@/lib/assignments/repository";
 import { assignmentInputSchema, flattenErrors, issuesToErrors } from "@/lib/validation/assignment";
 
-// Demo build: faculty routes need the demo faculty sign-in (shared password; src/proxy.ts), which is not real security.
+// Demo build: faculty routes need a faculty sign-in (src/proxy.ts); emails are not verified, so this is not production security.
 
 export async function GET() {
   try {

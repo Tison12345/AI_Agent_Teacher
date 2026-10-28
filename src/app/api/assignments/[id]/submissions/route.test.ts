@@ -4,12 +4,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const submissions = vi.hoisted(() => ({
   defaultSubmissionDeps: vi.fn(() => ({ marker: "deps" })),
   getStudentSubmission: vi.fn(),
-  listStudentSubmissions: vi.fn(),
+  listSubmissionsOfAccount: vi.fn(),
   getFacultySubmission: vi.fn(),
   listFacultySubmissions: vi.fn(),
 }));
 const assignments = vi.hoisted(() => ({ getStudentAssignment: vi.fn() }));
 const service = vi.hoisted(() => ({ submitAnswers: vi.fn(), retrySubmission: vi.fn() }));
+const auth = vi.hoisted(() => ({
+  session: { id: "11111111-1111-4111-8111-111111111111", role: "student", email: "asha.fictional@gmail.com", name: "Asha Fictional" } as { id: string; role: string; email: string; name: string } | null,
+}));
+// The signed-in user, as the sign-in cookie would give: a student by default.
+vi.mock("@/lib/auth/server", async () => {
+  const { errorResponse } = await import("@/lib/api/errors");
+  return {
+    getSession: async () => auth.session,
+    requireStudent: async (action: string) =>
+      !auth.session ? errorResponse(401, "unauthorized", `Sign in as a student to ${action}.`) : auth.session.role !== "student" ? errorResponse(403, "forbidden", `Only students can ${action}.`) : auth.session,
+  };
+});
 vi.mock("@/lib/submissions/repository", () => submissions);
 vi.mock("@/lib/assignments/repository", () => assignments);
 vi.mock("@/lib/submissions/service", async (importOriginal) => ({
@@ -41,10 +53,28 @@ function upload(fields: { studentName?: string; file?: File | string }, headers:
 
 beforeEach(() => {
   vi.clearAllMocks();
+  auth.session = { id: "11111111-1111-4111-8111-111111111111", role: "student", email: "asha.fictional@gmail.com", name: "Asha Fictional" };
   vi.spyOn(console, "error").mockImplementation(() => {});
   assignments.getStudentAssignment.mockResolvedValue({ id: A });
   service.submitAnswers.mockResolvedValue(S);
   submissions.getStudentSubmission.mockResolvedValue(studentView);
+});
+
+describe("POST /api/assignments/[id]/submissions needs a student sign-in", () => {
+  it("links the upload to the signed-in student's account, taken from the session", async () => {
+    const res = await upload({ studentName: "Asha Fictional", file: pdf() });
+    expect(res.status).toBe(201);
+    expect(service.submitAnswers.mock.calls[0][0]).toMatchObject({ studentId: "11111111-1111-4111-8111-111111111111" });
+  });
+
+  it("refuses a visitor who is not signed in (401) and a faculty user (403), storing and starting nothing", async () => {
+    auth.session = null;
+    expect((await upload({ studentName: "Asha Fictional", file: pdf() })).status).toBe(401);
+    auth.session = { id: "22222222-2222-4222-8222-222222222222", role: "faculty", email: "dr.rao@college.edu", name: "Dr Rao" };
+    expect((await upload({ studentName: "Asha Fictional", file: pdf() })).status).toBe(403);
+    expect(service.submitAnswers).not.toHaveBeenCalled();
+    expect(background.startInBackground).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/assignments/[id]/submissions", () => {
@@ -126,21 +156,21 @@ describe("POST /api/assignments/[id]/submissions", () => {
 });
 
 describe("GET /api/assignments/[id]/submissions", () => {
-  const get = (name?: string) =>
-    GET(new Request(`http://localhost/api/assignments/x/submissions${name === undefined ? "" : `?name=${encodeURIComponent(name)}`}`), ctx(A));
+  const get = () => GET(new Request("http://localhost/api/assignments/x/submissions"), ctx(A));
 
-  it("lists the submissions for the typed name", async () => {
-    submissions.listStudentSubmissions.mockResolvedValue([studentView]);
-    const res = await get(" asha fictional ");
+  it("lists the signed-in student's own uploads by account, ignoring any name in the URL", async () => {
+    submissions.listSubmissionsOfAccount.mockResolvedValue([studentView]);
+    const res = await GET(new Request("http://localhost/api/assignments/x/submissions?name=Someone%20Else"), ctx(A));
     expect((await res.json()).submissions).toEqual([studentView]);
-    expect(submissions.listStudentSubmissions).toHaveBeenCalledWith(A, "asha fictional");
+    expect(submissions.listSubmissionsOfAccount).toHaveBeenCalledWith(A, "11111111-1111-4111-8111-111111111111");
   });
 
-  it("needs a real name, so the whole list can never be requested", async () => {
-    expect((await get()).status).toBe(400);
-    expect((await get(" ")).status).toBe(400);
-    expect((await get("A")).status).toBe(400);
-    expect(submissions.listStudentSubmissions).not.toHaveBeenCalled();
+  it("needs a student sign-in, so nobody else's list can be requested", async () => {
+    auth.session = null;
+    expect((await get()).status).toBe(401);
+    auth.session = { id: "22222222-2222-4222-8222-222222222222", role: "faculty", email: "dr.rao@college.edu", name: "Dr Rao" };
+    expect((await get()).status).toBe(403);
+    expect(submissions.listSubmissionsOfAccount).not.toHaveBeenCalled();
   });
 });
 

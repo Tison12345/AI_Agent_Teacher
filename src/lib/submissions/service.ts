@@ -15,6 +15,8 @@ export class SubmissionError extends Error {
 export type NewSubmission = {
   id: string;
   assignmentId: string;
+  /** The student's account (app_users.id); null only for rows made without an account, such as in tests. */
+  studentId: string | null;
   studentName: string;
   filePath: string;
   fileName: string;
@@ -49,7 +51,7 @@ const SAVE_FAILED = "Your file could not be saved. Please upload it again.";
  * assignment workflow's job (src/lib/workflow/submission), started by the caller. Returns the new id.
  */
 export async function submitAnswers(
-  input: { assignmentId: string; studentName: string; fileName: string; bytes: Uint8Array; type: UploadType },
+  input: { assignmentId: string; studentId?: string | null; studentName: string; fileName: string; bytes: Uint8Array; type: UploadType },
   deps: SubmissionDeps,
 ): Promise<string> {
   const id = (deps.newId ?? (() => crypto.randomUUID()))();
@@ -57,6 +59,7 @@ export async function submitAnswers(
   await deps.store.insert({
     id,
     assignmentId: input.assignmentId,
+    studentId: input.studentId ?? null,
     studentName: input.studentName,
     filePath,
     fileName: input.fileName,

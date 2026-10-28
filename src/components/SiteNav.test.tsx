@@ -9,8 +9,8 @@ vi.mock("@/lib/api/client", () => api);
 
 import { SiteNav } from "./SiteNav";
 
-const student = { role: "student", email: "asha.fictional@gmail.com" } as const;
-const faculty = { role: "faculty", email: "dr.rao@college.edu" } as const;
+const student = { id: "11111111-1111-4111-8111-111111111111", role: "student", email: "asha.fictional@gmail.com", name: "Asha Fictional" } as const;
+const faculty = { id: "22222222-2222-4222-8222-222222222222", role: "faculty", email: "dr.rao@college.edu", name: "Dr Rao" } as const;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -50,10 +50,10 @@ describe("SiteNav", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
-  it("shows the signed-in email and role, with a Log out button", () => {
+  it("shows the signed-in name and role, with a Log out button", () => {
     render(<SiteNav session={student} />);
     const card = screen.getAllByTestId("user-card")[0];
-    expect(card).toHaveTextContent("asha.fictional@gmail.com");
+    expect(card).toHaveTextContent("Asha Fictional");
     expect(card).toHaveTextContent("Student");
     expect(screen.getAllByRole("button", { name: "Log out" }).length).toBeGreaterThanOrEqual(1);
   });

@@ -9,7 +9,7 @@ import { getSubmissionRunner } from "@/lib/workflow/submission";
 export const maxDuration = 60;
 
 /**
- * Demo build: demo faculty sign-in only (src/proxy.ts). Runs the marking workflow now for a submission that is still processing (for example an
+ * Demo build: faculty sign-in only (src/proxy.ts), not production security. Runs the marking workflow now for a submission that is still processing (for example an
  * upload from before marking existed). The result is only a recommendation; the run then waits for faculty.
  */
 export async function POST(_request: Request, ctx: RouteContext<"/api/faculty/submissions/[id]/grade">) {

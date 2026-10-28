@@ -52,6 +52,11 @@ vi.mock("@/lib/workflow/evaluation", async () => {
   };
 });
 
+// A student is signed in: creating a project needs one (the project is linked to the account).
+vi.mock("@/lib/auth/server", () => ({
+  getSession: async () => ({ id: "11111111-1111-4111-8111-111111111111", role: "student", email: "asha.fictional@gmail.com", name: "Asha Fictional" }),
+  requireStudent: async () => ({ id: "11111111-1111-4111-8111-111111111111", role: "student", email: "asha.fictional@gmail.com", name: "Asha Fictional" }),
+}));
 vi.mock("@/lib/db/supabase", () => ({ StorageConfigError: class extends Error {} }));
 vi.mock("@/lib/projects/repository", () => ({
   RepositoryError: class RepositoryError extends Error {
