@@ -10,7 +10,7 @@ import { GeminiError } from "@/lib/gemini/errors";
 import { fakeDeps, good, reply } from "@/test/submission-workflow";
 import { FencedPostgresSaver } from "../checkpointer";
 import { createWorkflowPool } from "../db";
-import { pgLeaseStore, runWithLease } from "../lease";
+import { pgLeaseActive, pgLeaseStore, runWithLease } from "../lease";
 import { buildSubmissionGraph } from "./graph";
 import { createSubmissionRunner, submissionThread } from "./runner";
 
@@ -95,5 +95,13 @@ describe.skipIf(!configured)("assignment workflow (live Postgres, restricted rol
     await new Promise((resolve) => setTimeout(resolve, 1_500));
     await expect(other.runner.start(id)).rejects.toMatchObject({ name: "LeaseHeldError" });
     await running;
+  });
+
+  it("sees the real lease: held while a run works, gone when it ends", async () => {
+    const thread = submissionThread(newId());
+    const active = pgLeaseActive(pool);
+    expect(await active(thread)).toBe(false);
+    await runWithLease(thread, async () => expect(await active(thread)).toBe(true), { store: pgLeaseStore(pool), ...lease });
+    expect(await active(thread)).toBe(false);
   });
 });

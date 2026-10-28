@@ -42,12 +42,14 @@ export type SnapshotView<Code extends string = string, Node extends string = str
   next: string[];
   /** True while the graph is paused at an interrupt. */
   interrupted: boolean;
+  /** True when the graph has work left, nobody is running it, and its last checkpoint is not brand new. */
+  stalled?: boolean;
 };
 
 export type Step<Node extends string> = { id: Node; label: string; status: StepStatus; attempt?: number };
 
 export type ProjectedProgress<Node extends string, Code extends string> = {
-  /** not_started | running | waiting_faculty, or the run's terminal outcome. */
+  /** not_started | running | stalled | waiting_faculty, or the run's terminal outcome. */
   state: string;
   steps: Step<Node>[];
   failure: { code: Code; message: string } | null;
@@ -94,6 +96,6 @@ export function projectSteps<Node extends string, Code extends string>(
   if (terminal) for (const step of steps) if (step.status === "pending") step.status = "skipped";
 
   const failure = outcome === "failed" && values.failureCode ? { code: values.failureCode, message: spec.messages[values.failureCode] } : null;
-  const state = terminal ? outcome : snapshot.interrupted ? "waiting_faculty" : "running";
+  const state = terminal ? outcome : snapshot.interrupted ? "waiting_faculty" : snapshot.stalled ? "stalled" : "running";
   return { state, steps, failure };
 }

@@ -32,6 +32,9 @@ export type RunnerOptions = {
   store: WorkflowStore;
   lease?: Partial<LeaseOptions>;
   sleep?: (ms: number) => Promise<void>;
+  /** See RunnerSpec.isLeased: lets progress() report a run nobody is running as stalled. */
+  isLeased?: (threadId: string) => Promise<boolean>;
+  stalledAfterMs?: number;
 };
 
 export type RunSummary = { outcome: SubmissionStateValues["outcome"] };
@@ -42,6 +45,8 @@ export function createSubmissionRunner(options: RunnerOptions) {
     leases: options.leases,
     lease: options.lease,
     sleep: options.sleep,
+    isLeased: options.isLeased,
+    stalledAfterMs: options.stalledAfterMs,
     threadId: submissionThread,
     freshInput: freshRunInput,
     project: projectProgress,

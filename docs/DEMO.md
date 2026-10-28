@@ -50,12 +50,20 @@ To rebuild the files: `extractor\.venv\Scripts\python -I samples\make_samples.py
 ## The walk-through
 
 1. **Faculty dashboard** (/faculty/assignments): the cards show assignments, questions, submissions, *Awaiting review* and *Decided*. Open the assignment; open a question to see its rubric and reference answer (faculty only).
-2. **Student upload** (/student/assignments, open the assignment): type a name (for example *Asha Fictional*), choose `strong-answers.docx`, **Submit answers**. The status goes *Processing*, then *Awaiting faculty review*; the page refreshes by itself. The student sees **no marks**.
+2. **Student upload** (/student/assignments, open the assignment): type a name (for example *Asha Fictional*), choose `strong-answers.docx`, **Submit answers**. The card shows the workflow's real steps: *Reading your file*, *Checking the text can be read*, *AI marking*, *Checking the marking*, *Saving the recommendation*, then *Faculty review* (waiting). The status ends as *Awaiting faculty review*; the page refreshes by itself. The student sees **no marks**, and the steps carry no text or scores.
 3. **Faculty review** (the submission page): read the extracted text, then the **AI recommendation** (marked *Not official*): marks per question, an explanation, and quotes from the student's own words. Point out that every mark has a quote.
-4. **Decide.** *Approve* (the AI's marks become official), *Edit* (change a mark, write the feedback the student sees, add a private comment), or *Reject* (no marks). A decision is final.
+4. **Decide.** The submission page also shows a **Workflow** panel: it is paused at *Faculty review*. *Approve* (the AI's marks become official), *Edit* (change a mark, write the feedback the student sees, add a private comment), or *Reject* (no marks). A decision is final, and the workflow then finishes (every step done).
 5. **Back as the student:** reload; the official marks per question and the feedback appear. The private comment and the AI's own numbers are never shown.
 6. **Edge cases** (upload each under a new name): `weak-answers.pdf` (low marks), `injection-answers.docx` (the instruction is ignored), `scanned-answers.pdf` (clear *Needs OCR* message), and a `.txt` renamed to `.pdf` (refused: "not a real PDF").
 7. **If Gemini is busy** the submission shows *Failed* with a reason and **Try again** (students) or **Run AI marking** (faculty). Nothing is lost.
+
+## Showing the workflow itself
+
+- **Pause and resume.** After step 2 the workflow is parked at *Faculty review* in the database (the `langgraph` schema). Restart the dev server before deciding: the submission page still shows the paused workflow, and approving still finishes it.
+- **Weekly evaluation.** On a student project page, *Complete Week N* starts the weekly workflow and the week shows its steps (*Fetching your code changes*, *AI review*, *Checking the review*, *Saving it for teacher review*, then *Teacher review*). The student never sees the AI's score.
+- **Retries.** If Gemini times out once, the step is tried again by itself. A bad AI answer is sent back once with the problems listed; a second bad answer ends the run as failed (and the submission or week can be retried).
+- **A stopped run.** If the server is stopped mid-run, the panel shows *This run stopped before it finished* with a **Continue** button that picks it up at the step it stopped at.
+- Details: [WORKFLOWS.md](WORKFLOWS.md).
 
 ## What to say about the limits
 

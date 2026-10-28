@@ -6,6 +6,7 @@ import {
   LeaseHeldError,
   LeaseLostError,
   NoLeaseError,
+  pgLeaseActive,
   pgLeaseStore,
   RunDeadlineError,
   runWithLease,
@@ -164,5 +165,15 @@ describe("pgLeaseStore", () => {
     const store = pgLeaseStore({ query: vi.fn(async () => ({ rows: [{ ok: false }] })) } as never);
     expect(await store.claim(THREAD, "h", 180)).toBe(false);
     expect(await pgLeaseStore({ query: vi.fn(async () => ({ rows: [] })) } as never).renew(THREAD, "h", 180)).toBe(false);
+  });
+});
+
+describe("pgLeaseActive", () => {
+  it("asks the database, with its own clock, whether an unexpired lease exists for the thread", async () => {
+    const query = vi.fn<(sql: string, params?: unknown[]) => Promise<{ rowCount: number }>>(async () => ({ rowCount: 1 }));
+    expect(await pgLeaseActive({ query } as never)(THREAD)).toBe(true);
+    expect(query.mock.calls[0][0]).toBe("select 1 from langgraph.run_leases where thread_id = $1 and expires_at > now()");
+    expect(query.mock.calls[0][1]).toEqual([THREAD]);
+    expect(await pgLeaseActive({ query: vi.fn(async () => ({ rowCount: 0 })) } as never)(THREAD)).toBe(false);
   });
 });

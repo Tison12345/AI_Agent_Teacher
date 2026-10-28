@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   runner: undefined as undefined | { start(target: never): Promise<unknown>; progress(key: string): Promise<unknown> },
   runs: [] as Promise<unknown>[],
   held: new Set<string>(),
+  resumed: [] as string[],
 }));
 
 // The real evaluation graph on a memory checkpointer, with a lease store that lets one run hold a thread at a time.
@@ -32,6 +33,9 @@ vi.mock("@/lib/workflow/evaluation", async () => {
         },
         sleep: async () => {},
       }) as never),
+    resumeEvaluationInBackground: (_runner: unknown, checkpointId: string) => {
+      state.resumed.push(checkpointId);
+    },
     startEvaluationInBackground: (runner: { start(target: never): Promise<unknown> }, target: never) => {
       state.runs.push(runner.start(target).catch(() => {}));
     },
@@ -67,7 +71,7 @@ vi.mock("@/lib/db/supabase", () => ({ StorageConfigError: class extends Error {}
 
 import { STRONG, WEEK, modelAnswer } from "@/lib/evaluation/fixtures";
 import { GET as getEvaluation } from "../evaluation/route";
-import { GET as getWorkflow } from "../workflow/route";
+import { GET as getWorkflow, POST as resumeRoute } from "../workflow/route";
 import { POST as startRoute } from "./route";
 
 const id = "123e4567-e89b-42d3-a456-426614174000";
@@ -98,6 +102,7 @@ beforeEach(async () => {
   state.runner = undefined;
   state.runs = [];
   state.held.clear();
+  state.resumed = [];
   state.geminiConfigured = true;
   state.compare = diff;
   state.plan = {
@@ -266,5 +271,24 @@ describe("GET /api/projects/[id]/weeks/[week]/evaluation", () => {
   it("rejects bad ids and weeks", async () => {
     expect((await get("abc")).status).toBe(400);
     expect((await getEvaluation(new Request("http://localhost/x"), ctx("1", "nope"))).status).toBe(400);
+  });
+});
+
+describe("POST /api/projects/[id]/weeks/[week]/workflow (continue a stalled run)", () => {
+  const resume = (week = "1", projectId = id) => resumeRoute(new Request("http://localhost/x", { method: "POST" }), ctx(week, projectId));
+
+  it("leaves a run that is not stalled alone (409), including a week with no workflow", async () => {
+    expect((await resume()).status).toBe(409); // recorded, never evaluated
+    await POST(req, ctx("1"));
+    const res = await resume(); // paused for the teacher
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("not_stalled");
+    expect((await resume("2")).status).toBe(409); // not recorded
+    expect(state.resumed).toEqual([]);
+  });
+
+  it("rejects bad ids and weeks", async () => {
+    expect((await resume("abc")).status).toBe(400);
+    expect((await resume("1", "nope")).status).toBe(400);
   });
 });

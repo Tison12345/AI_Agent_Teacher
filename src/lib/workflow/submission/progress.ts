@@ -60,7 +60,7 @@ export const STEPS = [
 
 export const StepStatusSchema = z.enum(["done", "active", "waiting", "pending", "failed", "skipped"]);
 export const WorkflowProgressSchema = z.object({
-  state: z.enum(["not_started", "running", "waiting_faculty", "complete", "needs_ocr", "failed", "skipped"]),
+  state: z.enum(["not_started", "running", "stalled", "waiting_faculty", "complete", "needs_ocr", "failed", "skipped"]),
   steps: z.array(
     z.object({
       id: WorkflowNodeSchema,

@@ -32,6 +32,9 @@ export type EvaluationRunnerOptions = {
   leases: LeaseStore;
   lease?: Partial<LeaseOptions>;
   sleep?: (ms: number) => Promise<void>;
+  /** See RunnerSpec.isLeased: lets progress() report a run nobody is running as stalled. */
+  isLeased?: (threadId: string) => Promise<boolean>;
+  stalledAfterMs?: number;
 };
 
 export function createEvaluationRunner(options: EvaluationRunnerOptions) {
@@ -40,6 +43,8 @@ export function createEvaluationRunner(options: EvaluationRunnerOptions) {
     leases: options.leases,
     lease: options.lease,
     sleep: options.sleep,
+    isLeased: options.isLeased,
+    stalledAfterMs: options.stalledAfterMs,
     threadId: evaluationThread,
     freshInput: (_checkpointId, run, target) => freshEvaluationInput(target as EvaluationTarget, run),
     project: projectEvaluationProgress,

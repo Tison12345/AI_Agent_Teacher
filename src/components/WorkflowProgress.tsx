@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { fetchEvaluationProgress, fetchWorkflowProgress } from "@/lib/api/client";
+import { fetchEvaluationProgress, fetchWorkflowProgress, resumeEvaluationWorkflow, resumeSubmissionWorkflow } from "@/lib/api/client";
 import type { StepStatus } from "@/lib/workflow/progress-core";
 
 /** Looked at again this often while the workflow is working. */
@@ -30,6 +30,7 @@ export type ProgressView = {
 const SUMMARY: Record<string, string> = {
   not_started: "Waiting to start.",
   running: "Working on it. This page updates by itself.",
+  stalled: "This run stopped before it finished. It can continue from the step where it stopped.",
   waiting_faculty: "The AI review is ready. Waiting for a teacher to review it.",
   complete: "Finished. A teacher has made the decision.",
   needs_ocr: "Stopped: this document has no typed text to read.",
@@ -37,7 +38,7 @@ const SUMMARY: Record<string, string> = {
   skipped: "Nothing to do for this submission.",
 };
 
-const polls = (state: string) => state === "running" || state === "not_started" || state === "waiting_faculty";
+const polls = (state: string) => state === "running" || state === "stalled" || state === "not_started" || state === "waiting_faculty";
 
 /**
  * The steps of a workflow, read from the real graph state (an allowlisted projection, which has no text, AI
@@ -50,14 +51,19 @@ export function ProgressPanel({
   load,
   onStateChange,
   stale,
+  onResume,
 }: {
   load: () => Promise<ProgressView>;
+  /** Continues a stalled run. When given, a stalled run shows a Continue button. */
+  onResume?: () => Promise<{ ok: true } | { ok: false; message: string }>;
   /** True for a progress that still describes the previous run (a run was just started): shown as "starting". */
   stale?: (progress: ProgressView) => boolean;
   onStateChange?: (state: string, progress: ProgressView) => void;
 }) {
   const [progress, setProgress] = useState<ProgressView | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [resuming, setResuming] = useState(false);
+  const [resumeProblem, setResumeProblem] = useState<string | null>(null);
   const lastState = useRef<string | null>(null);
   const loadRef = useRef(load);
   const notify = useRef(onStateChange);
@@ -97,6 +103,20 @@ export function ProgressPanel({
     };
   }, []);
 
+  async function handleResume() {
+    if (!onResume || resuming) return;
+    setResuming(true);
+    setResumeProblem(null);
+    try {
+      const result = await onResume();
+      if (result.ok) setProgress((prev) => (prev ? { ...prev, state: "running" } : prev)); // the next look shows the real state
+      else setResumeProblem(result.message);
+    } catch {
+      setResumeProblem("Could not reach the server. Please try again.");
+    }
+    setResuming(false);
+  }
+
   if (!progress) {
     return problem ? (
       <p role="alert" className="text-sm text-danger">
@@ -131,6 +151,18 @@ export function ProgressPanel({
           );
         })}
       </ol>
+      {progress.state === "stalled" && onResume && (
+        <div className="space-y-1">
+          <button type="button" onClick={handleResume} disabled={resuming} className="btn-secondary btn-sm">
+            {resuming ? "Continuing…" : "Continue"}
+          </button>
+          {resumeProblem && (
+            <p role="alert" className="text-danger">
+              {resumeProblem}
+            </p>
+          )}
+        </div>
+      )}
       {progress.failure && (
         <p role="alert" className="text-danger">
           {progress.failure.message}
@@ -161,6 +193,7 @@ export function WorkflowProgress({
     <ProgressPanel
       key={submissionId}
       load={() => fetchWorkflowProgress(submissionId)}
+      onResume={() => resumeSubmissionWorkflow(submissionId)}
       stale={(progress) => status === "processing" && LEFTOVER.includes(progress.state)}
       onStateChange={(state) => {
         if (first.current !== null && first.current !== state) onStateChange?.(state);
@@ -187,6 +220,7 @@ export function EvaluationWorkflowProgress({
     <ProgressPanel
       key={`${projectId}:${weekNumber}`}
       load={() => fetchEvaluationProgress(projectId, weekNumber)}
+      onResume={() => resumeEvaluationWorkflow(projectId, weekNumber)}
       stale={(progress) => progress.run !== undefined && progress.run <= afterRun && progress.state !== "running" && progress.state !== "not_started"}
       onStateChange={onStateChange}
     />

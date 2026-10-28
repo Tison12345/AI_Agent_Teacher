@@ -15,11 +15,15 @@ export type GraphLike = {
     values: unknown;
     next: string[];
     tasks: { interrupts: unknown[] }[];
+    createdAt?: string;
   }>;
   updateState(config: never, values: never, asNode?: string): Promise<unknown>;
 };
 
 export type RunSummary = { outcome: string };
+
+/** A run nobody is running, whose last checkpoint is older than this, is reported as stalled. */
+export const STALLED_AFTER_MS = 30_000;
 
 export type FailureRecord = {
   /** The state update recorded as the failed node's result (failure code, reason, trace entry). */
@@ -35,6 +39,10 @@ export type RunnerSpec<Progress> = {
   /** Waits between attempts to wake a run while another run still holds the thread (default: a real timer). */
   sleep?: (ms: number) => Promise<void>;
   threadId(key: string): string;
+  /** True while some process holds a live lease on the thread. Without it, a run is never reported as stalled. */
+  isLeased?: (threadId: string) => Promise<boolean>;
+  /** How old the last checkpoint must be before a run nobody is running counts as stalled. */
+  stalledAfterMs?: number;
   /** `arg` is whatever the caller passed to start(); a workflow whose input is just its key ignores it. */
   freshInput(key: string, run: number, arg?: unknown): unknown;
   /** Describes an error thrown by `node` (undefined when unknown) with the graph's values at that moment. */
@@ -54,6 +62,22 @@ export function createRunner<Progress>(spec: RunnerSpec<Progress>) {
   const lease = (key: string, fn: Parameters<typeof runWithLease<RunSummary>>[1]) =>
     runWithLease(spec.threadId(key), fn, { store: leases, ...spec.lease });
   const outcomeOf = (values: unknown) => ((values as { outcome?: string } | undefined)?.outcome ?? "running");
+
+  /**
+   * Work is left (the graph is neither finished nor waiting for a person), nobody holds the lease, and the last
+   * checkpoint is older than a few seconds (a run that was only just asked to start has not claimed its lease yet).
+   */
+  async function isStalled(key: string, snapshot: { values: unknown; next: string[]; createdAt?: string }, interrupted: boolean): Promise<boolean> {
+    if (!spec.isLeased || interrupted || snapshot.next.length === 0) return false;
+    if (outcomeOf(snapshot.values) !== "running") return false;
+    const age = snapshot.createdAt ? Date.now() - new Date(snapshot.createdAt).getTime() : 0;
+    if (!(age > (spec.stalledAfterMs ?? STALLED_AFTER_MS))) return false;
+    try {
+      return !(await spec.isLeased(spec.threadId(key)));
+    } catch {
+      return false; // cannot tell: do not offer a Resume that might collide with a live run
+    }
+  }
 
   /**
    * A node threw. Record the failure in the graph (as that node's result) and let the graph's own failure path
@@ -144,10 +168,12 @@ export function createRunner<Progress>(spec: RunnerSpec<Progress>) {
     /** The allowlisted progress, read from the checkpoint. Needs no lease: reading changes nothing. */
     async progress(key: string): Promise<Progress> {
       const snapshot = await graph.getState(configFor(key));
+      const interrupted = snapshot.tasks.some((task) => task.interrupts.length > 0);
       const view: SnapshotView = {
         values: (snapshot.values ?? {}) as SnapshotView["values"],
         next: snapshot.next,
-        interrupted: snapshot.tasks.some((task) => task.interrupts.length > 0),
+        interrupted,
+        stalled: await isStalled(key, snapshot, interrupted),
       };
       return spec.project(view as never);
     },

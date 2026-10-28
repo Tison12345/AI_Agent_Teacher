@@ -2,7 +2,7 @@ import "server-only";
 import { after } from "next/server";
 import { getCheckpointer } from "../checkpointer";
 import { getWorkflowPool, WorkflowConfigError } from "../db";
-import { LeaseHeldError, pgLeaseStore } from "../lease";
+import { LeaseHeldError, pgLeaseActive, pgLeaseStore } from "../lease";
 import { buildSubmissionGraph } from "./graph";
 import { defaultSubmissionGraphDeps, supabaseWorkflowStore } from "./repository";
 import { createSubmissionRunner, type SubmissionRunner } from "./runner";
@@ -16,9 +16,22 @@ export function getSubmissionRunner(): SubmissionRunner {
   holder[KEY] ??= createSubmissionRunner({
     graph: buildSubmissionGraph(defaultSubmissionGraphDeps(), getCheckpointer()),
     leases: pgLeaseStore(getWorkflowPool()),
+    isLeased: pgLeaseActive(getWorkflowPool()),
     store: supabaseWorkflowStore,
   });
   return holder[KEY];
+}
+
+/** Continues a stalled run from the step it stopped at, after the response has been sent. */
+export function resumeInBackground(submissionId: string): void {
+  after(async () => {
+    try {
+      await getSubmissionRunner().resume(submissionId);
+    } catch (error) {
+      if (error instanceof LeaseHeldError) return; // someone else is already running it
+      console.error("[workflow] resume failed:", error instanceof Error ? error.name : "unknown");
+    }
+  });
 }
 
 const NOT_SET_UP = "Marking is not set up on the server. Please try again later.";

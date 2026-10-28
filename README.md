@@ -4,6 +4,8 @@ Students submit a project with a GitHub repository. Gemini turns it into a weekl
 
 > **Not ready for public deployment.** There is no login. Anyone who can reach the server can create projects, record checkpoints, **read AI scores, and submit teacher decisions**. See [Limitations](#limitations-read-before-using).
 
+> **Workflows.** Assignment marking and the weekly evaluation run as LangGraph.js graphs with saved checkpoints, a pause for faculty approval, bounded retries, and live progress in the pages. See [docs/WORKFLOWS.md](docs/WORKFLOWS.md).
+
 ## Principles the code follows
 
 - The AI score is a **recommendation**. The teacher's decision is the official result, stored separately.
@@ -41,6 +43,7 @@ cp .env.example .env.local     # then fill it in
 | `GEMINI_API_KEY` | yes | Google AI Studio key. Server only. |
 | `GEMINI_MODEL` | no | Defaults to `gemini-2.5-flash`. Free-tier quota is **per model per day**; if one is used up, set another model you have access to. Preview models can change or be retired. |
 | `EXTRACTOR_URL` / `EXTRACTOR_KEY` | for assignment uploads | The local text-extraction service (default URL `http://127.0.0.1:8001`) and the secret shared with it. Server only. See [extractor/README.md](extractor/README.md) |
+| `DATABASE_URL` / `DATABASE_CA_PATH` | yes, for the workflows | The restricted `langgraph_app` Postgres role through Supabase's pooler, and Supabase's CA certificate (default `certs/supabase-ca.crt`). Server only. See [docs/WORKFLOWS.md](docs/WORKFLOWS.md#setup) |
 | `GITHUB_TOKEN` | no | Fine-grained, **read-only** token (Contents: Read, Metadata: Read). Without it GitHub allows 60 requests/hour and only public repos work; with it, 5,000/hour. |
 
 Never prefix these with `NEXT_PUBLIC_`. The production build was checked to confirm none of these values appear in any file served to browsers.
@@ -59,6 +62,7 @@ Run the files in `supabase/migrations/` **in order**, once each, in the Supabase
 | `0006_variable_duration.sql` | Project length 1 to 16 weeks (replaces the fixed 12) |
 | `0007_quizzes.sql` | `quizzes` (one per checkpoint), `quiz_attempts` (one per quiz); both immutable |
 | `0008_assignments.sql` | AI assignment evaluation (demo): `assignments`, `submissions`, `submission_decisions`, the `decide_submission()` function, the student-safe views `student_assignments` / `student_submissions`, and a private `submissions` storage bucket |
+| `0009_langgraph_checkpoints.sql` | The `langgraph` schema (workflow checkpoints and run leases) and the restricted role `langgraph_app`. Run it, then set the role's password (see [docs/WORKFLOWS.md](docs/WORKFLOWS.md#setup)) |
 
 All tables have row-level security enabled with no access for `anon`/`authenticated`; only the server's secret key can read or write.
 
@@ -144,7 +148,7 @@ A small, separate feature for a college demonstration: faculty create assignment
 - After a file is read, Gemini marks each question against its rubric (and reference answer, if there is one). The answer must quote the student's own words for every mark above 0, and each quote is checked against the extracted text; marks are checked against each question's maximum. One corrected retry, then the submission is kept as *Failed* with a reason and a Try again button.
 - The result is stored as the AI's **recommendation** only (`ai_result`, written once). The total is computed by the database, never by the AI or the browser. The submission becomes *Awaiting faculty review*, and the student sees nothing yet.
 - On `/faculty/submissions/[id]` the teacher sees each question's marks, explanation and quotes, then **approves** (copies the AI's marks and feedback), **edits** (new marks, feedback and a private comment) or **rejects** (no marks). This runs through the `decide_submission()` database function; a decision is final. Only after approve or edit does the student see their marks and feedback.
-- Marking runs after the upload response (`after()`), so the student is not kept waiting; the student's page refreshes itself. Faculty can also press **Run AI marking** for a submission whose text was read but not yet marked.
+- Reading and marking run as a workflow after the upload response (`after()`), so the student is not kept waiting; the page shows the real steps and refreshes itself. Faculty can also press **Run AI marking** for a submission that is still processing.
 
 **Phase D** adds the faculty dashboard counts (awaiting review, decided, needing attention), fictional sample answer files in [`samples/`](samples/), an end-to-end live test (`src/lib/submissions/flow.live.test.ts`: real files, real Python reader, real Supabase, scripted Gemini) and a step-by-step demo script, [`docs/DEMO.md`](docs/DEMO.md).
 
@@ -154,9 +158,9 @@ Demo limits, on purpose: **no login** (anyone can open the faculty routes and cr
 
 ## Deployment notes
 
-- Any Node host for Next.js 16 works (e.g. Vercel). Set the four server variables in the host's environment settings, not in the repository.
-- Plan generation and evaluation can take up to ~60 seconds (`maxDuration = 60` on those routes). Choose a plan that allows functions that long.
-- Run all eight migrations on the production Supabase project before first use.
+- Any Node host for Next.js 16 works (e.g. Vercel). Set the server variables (including `DATABASE_URL`) in the host's environment settings, not in the repository.
+- Plan generation can take up to ~60 seconds (`maxDuration = 60`). Evaluations and assignment marking run in the background after the response (up to 10 minutes per run); on a host that stops functions earlier, a run can stall, and the page offers **Continue**.
+- Run all nine migrations on the production Supabase project before first use.
 - Quiz creation takes up to ~60 seconds like evaluation (`maxDuration = 60`), and uses one more Gemini call per week.
 - **Do not expose a deployment publicly until authentication exists** (limitation 1).
 - Rotate any key that has ever been pasted into a chat, ticket or commit.

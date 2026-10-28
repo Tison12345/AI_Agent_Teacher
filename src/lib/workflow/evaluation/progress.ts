@@ -69,7 +69,7 @@ export const EVALUATION_STEPS = [
 ] as const satisfies readonly { id: EvaluationNode; label: string }[];
 
 export const EvaluationProgressSchema = z.object({
-  state: z.enum(["not_started", "running", "waiting_faculty", "complete", "failed", "skipped"]),
+  state: z.enum(["not_started", "running", "stalled", "waiting_faculty", "complete", "failed", "skipped"]),
   steps: z.array(
     z.object({
       id: EvaluationNodeSchema,

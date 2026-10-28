@@ -2,7 +2,7 @@ import "server-only";
 import { after } from "next/server";
 import { getCheckpointer } from "../checkpointer";
 import { getWorkflowPool } from "../db";
-import { LeaseHeldError, pgLeaseStore } from "../lease";
+import { LeaseHeldError, pgLeaseActive, pgLeaseStore } from "../lease";
 import { buildEvaluationGraph, type EvaluationTarget } from "./graph";
 import { defaultEvaluationGraphDeps } from "./repository";
 import { createEvaluationRunner, type EvaluationRunner } from "./runner";
@@ -16,8 +16,21 @@ export function getEvaluationRunner(): EvaluationRunner {
   holder[KEY] ??= createEvaluationRunner({
     graph: buildEvaluationGraph(defaultEvaluationGraphDeps(), getCheckpointer()),
     leases: pgLeaseStore(getWorkflowPool()),
+    isLeased: pgLeaseActive(getWorkflowPool()),
   });
   return holder[KEY];
+}
+
+/** Continues a stalled run from the step it stopped at, after the response has been sent. */
+export function resumeEvaluationInBackground(runner: EvaluationRunner, checkpointId: string): void {
+  after(async () => {
+    try {
+      await runner.resume(checkpointId);
+    } catch (error) {
+      if (error instanceof LeaseHeldError) return; // someone else is already running it
+      console.error("[workflow] resume failed:", error instanceof Error ? error.name : "unknown");
+    }
+  });
 }
 
 /**

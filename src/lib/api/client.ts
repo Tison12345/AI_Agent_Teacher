@@ -474,3 +474,17 @@ export async function fetchEvaluationProgress(projectId: string, weekNumber: num
   if (!res.ok) throw new Error(await readError(res));
   return z.object({ progress: EvaluationProgressSchema }).parse(await res.json()).progress;
 }
+
+export type ResumeResult = { ok: true } | { ok: false; message: string };
+
+async function resumeAt(url: string): Promise<ResumeResult> {
+  const res = await fetch(url, { method: "POST" });
+  return res.ok ? { ok: true } : { ok: false, message: await readError(res) };
+}
+
+/** Continues a submission's stalled workflow from the step it stopped at. */
+export const resumeSubmissionWorkflow = (submissionId: string) => resumeAt(`/api/submissions/${encodeURIComponent(submissionId)}/workflow`);
+
+/** Continues a week's stalled evaluation workflow from the step it stopped at. */
+export const resumeEvaluationWorkflow = (projectId: string, weekNumber: number) =>
+  resumeAt(`/api/projects/${encodeURIComponent(projectId)}/weeks/${weekNumber}/workflow`);

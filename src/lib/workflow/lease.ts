@@ -41,6 +41,14 @@ export function pgLeaseStore(pool: Pick<Pool, "query">): LeaseStore {
   };
 }
 
+/** True while some process holds an unexpired lease on the thread. Reads only (the role may select run_leases). */
+export function pgLeaseActive(pool: Pick<Pool, "query">): (threadId: string) => Promise<boolean> {
+  return async (threadId) => {
+    const result = await pool.query("select 1 from langgraph.run_leases where thread_id = $1 and expires_at > now()", [threadId]);
+    return (result.rowCount ?? 0) > 0;
+  };
+}
+
 /** Someone else is already running this workflow. */
 export class LeaseHeldError extends Error {
   constructor() {

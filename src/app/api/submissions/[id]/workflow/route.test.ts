@@ -4,9 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const submissions = vi.hoisted(() => ({ getStudentSubmission: vi.fn() }));
 const runner = vi.hoisted(() => ({ progress: vi.fn() }));
 vi.mock("@/lib/submissions/repository", () => submissions);
-vi.mock("@/lib/workflow/submission", () => ({ getSubmissionRunner: () => runner }));
+const resume = vi.hoisted(() => ({ resumeInBackground: vi.fn() }));
+vi.mock("@/lib/workflow/submission", () => ({ getSubmissionRunner: () => runner, ...resume }));
 
-import { GET } from "./route";
+import { GET, POST } from "./route";
 
 const S = "223e4567-e89b-42d3-a456-426614174000";
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) }) as never;
@@ -44,5 +45,31 @@ describe("GET /api/submissions/[id]/workflow", () => {
     const res = await get();
     expect(res.status).toBe(500);
     expect(JSON.stringify(await res.json())).not.toMatch(/hunter2|ECONNREFUSED|secret-host/);
+  });
+});
+
+describe("POST /api/submissions/[id]/workflow (continue a stalled run)", () => {
+  const post = (id = S) => POST(new Request("http://localhost", { method: "POST" }), ctx(id));
+
+  it("continues a stalled run in the background (202)", async () => {
+    runner.progress.mockResolvedValue({ state: "stalled", steps: [], failure: null });
+    const res = await post();
+    expect(res.status).toBe(202);
+    expect(resume.resumeInBackground).toHaveBeenCalledWith(S);
+  });
+
+  it.each(["running", "waiting_faculty", "complete", "failed", "needs_ocr", "not_started"])("leaves a %s run alone (409)", async (state) => {
+    runner.progress.mockResolvedValue({ state, steps: [], failure: null });
+    const res = await post();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("not_stalled");
+    expect(resume.resumeInBackground).not.toHaveBeenCalled();
+  });
+
+  it("is 404 for an unknown submission and 400 for a bad id", async () => {
+    submissions.getStudentSubmission.mockResolvedValue(null);
+    expect((await post()).status).toBe(404);
+    expect((await post("nope")).status).toBe(400);
+    expect(resume.resumeInBackground).not.toHaveBeenCalled();
   });
 });

@@ -9,7 +9,11 @@ import type { LeaseStore } from "../lease";
 import { buildEvaluationGraph } from "./graph";
 import { createEvaluationRunner, evaluationThread } from "./runner";
 
-type Options = Parameters<typeof evaluationHarness>[0] & { lease?: Partial<LeaseStore>; weeks?: number[] };
+type Options = Parameters<typeof evaluationHarness>[0] & {
+  lease?: Partial<LeaseStore>;
+  weeks?: number[];
+  isLeased?: (threadId: string) => Promise<boolean>;
+};
 
 async function setup(options: Options = {}) {
   const h = evaluationHarness(options);
@@ -21,6 +25,8 @@ async function setup(options: Options = {}) {
     graph,
     leases,
     sleep: async () => {},
+    isLeased: options.isLeased,
+    stalledAfterMs: 0,
     lease: { heartbeatMs: 10_000, selfAbortMs: 20_000, runDeadlineMs: 60_000 },
   });
   const checkpoint = recorded[recorded.length - 1];
@@ -257,5 +263,31 @@ describe("what the progress shows", () => {
   it("is 'not started' for a checkpoint with no workflow yet", async () => {
     const t = await setup();
     expect(await t.runner.progress(t.checkpoint.id)).toMatchObject({ state: "not_started", run: 0 });
+  });
+});
+
+describe("a stalled evaluation", () => {
+  it("is reported as stalled once its process is gone, and Resume continues it from the step it stopped at", async () => {
+    const t = await setup({ gemini: [new GeminiError("rejected"), goodAnswer()], isLeased: async () => false });
+    const real = t.graph.updateState.bind(t.graph);
+    t.graph.updateState = vi.fn().mockRejectedValue(new Error("process died"));
+    await t.runner.start(t.target);
+    t.graph.updateState = real;
+
+    const stalled = await t.runner.progress(t.checkpoint.id);
+    expect(stalled.state).toBe("stalled");
+    expect(statusOf(stalled)).toMatchObject({ load_context: "done", fetch_diff: "done", generate: "active" });
+
+    expect((await t.runner.resume(t.checkpoint.id)).resumed).toBe(true);
+    expect(t.compareCommits).toHaveBeenCalledTimes(1); // the code changes were not fetched again
+    expect((await t.runner.progress(t.checkpoint.id)).state).toBe("waiting_faculty");
+    expect(t.evaluations.rows).toHaveLength(1);
+  });
+
+  it("is not stalled while a process holds the lease", async () => {
+    const t = await setup({ gemini: [new GeminiError("rejected")], isLeased: async () => true });
+    t.graph.updateState = vi.fn().mockRejectedValue(new Error("process died"));
+    await t.runner.start(t.target);
+    expect((await t.runner.progress(t.checkpoint.id)).state).toBe("running");
   });
 });

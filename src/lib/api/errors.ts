@@ -47,6 +47,11 @@ export function handleUnexpected(error: unknown): Response {
     console.error("[api] storage not configured");
     return errorResponse(503, "storage_unavailable", "Storage is not configured on the server.");
   }
+  // Matched by name so this module does not load the workflow database code. The message never holds the URL.
+  if (error instanceof Error && error.name === "WorkflowConfigError") {
+    console.error("[api] workflow database not configured");
+    return errorResponse(503, "workflow_unavailable", "The workflow service is not set up on the server.");
+  }
   if (error instanceof GeminiError) {
     return errorResponse(GEMINI_STATUS[error.code], `gemini_${error.code}`, error.message);
   }

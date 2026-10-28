@@ -9,7 +9,11 @@ import { LeaseLostError, type LeaseStore } from "../lease";
 import { buildSubmissionGraph } from "./graph";
 import { createSubmissionRunner, submissionThread } from "./runner";
 
-type Setup = Behaviour & { lease?: Partial<LeaseStore>; leaseOptions?: Parameters<typeof createSubmissionRunner>[0]["lease"] };
+type Setup = Behaviour & {
+  lease?: Partial<LeaseStore>;
+  leaseOptions?: Parameters<typeof createSubmissionRunner>[0]["lease"];
+  isLeased?: (threadId: string) => Promise<boolean>;
+};
 
 function setup(options: Setup = {}) {
   const { db, store, deps, extract, requestGrading } = fakeDeps(options);
@@ -20,6 +24,8 @@ function setup(options: Setup = {}) {
     leases,
     store,
     sleep: async () => {},
+    isLeased: options.isLeased,
+    stalledAfterMs: 0,
     lease: { heartbeatMs: 10_000, selfAbortMs: 20_000, runDeadlineMs: 60_000, ...options.leaseOptions },
   });
   return { db, deps, extract, requestGrading, runner, graph };
@@ -278,5 +284,56 @@ describe("what the progress shows", () => {
     const progress = await t.runner.progress(ID);
     expect(progress.state).toBe("not_started");
     expect(progress.steps.every((step) => step.status === "pending")).toBe(true);
+  });
+});
+
+describe("a stalled run", () => {
+  /** A run whose process died after the marking step: the checkpoint stops at grade and nothing can be recorded. */
+  async function stalledAt(over: Setup = {}) {
+    const t = setup({ grading: [new GeminiError("rejected")], ...over });
+    const real = t.graph.updateState.bind(t.graph);
+    t.graph.updateState = vi.fn().mockRejectedValue(new Error("process died"));
+    await t.runner.start(ID);
+    t.graph.updateState = real;
+    t.db.status = "processing";
+    t.db.error = null;
+    t.requestGrading.mockResolvedValue(reply(good));
+    return t;
+  }
+
+  it("is reported as stalled when work is left and nobody holds the lease, and the progress still shows the step", async () => {
+    const t = await stalledAt({ isLeased: async () => false });
+    const progress = await t.runner.progress(ID);
+    expect(progress.state).toBe("stalled");
+    expect(statusOf(progress)).toMatchObject({ extract_text: "done", check_readable: "done", grade: "active" });
+  });
+
+  it("is not stalled while a process holds the lease, or when the lease cannot be checked", async () => {
+    expect((await (await stalledAt({ isLeased: async () => true })).runner.progress(ID)).state).toBe("running");
+    expect((await (await stalledAt({ isLeased: async () => { throw new Error("db down"); } })).runner.progress(ID)).state).toBe("running");
+    expect((await (await stalledAt()).runner.progress(ID)).state).toBe("running"); // no lease check configured
+  });
+
+  it("a run that was only just asked to start is not called stalled yet", async () => {
+    const t = await stalledAt({ isLeased: async () => false });
+    const young = createSubmissionRunner({ graph: t.graph, leases: { claim: async () => true, renew: async () => true, release: async () => true }, store: t.deps.store, isLeased: async () => false, stalledAfterMs: 60_000 });
+    expect((await young.progress(ID)).state).toBe("running");
+  });
+
+  it("a paused or finished run is never stalled", async () => {
+    const paused = setup({ isLeased: async () => false });
+    await paused.runner.start(ID);
+    expect((await paused.runner.progress(ID)).state).toBe("waiting_faculty");
+    paused.db.decided = true;
+    await paused.runner.resume(ID);
+    expect((await paused.runner.progress(ID)).state).toBe("complete");
+  });
+
+  it("Resume continues from the step it stopped at and the run finishes its course", async () => {
+    const t = await stalledAt({ isLeased: async () => false });
+    expect((await t.runner.resume(ID)).resumed).toBe(true);
+    expect(t.extract).toHaveBeenCalledTimes(1); // the reading was not repeated
+    expect((await t.runner.progress(ID)).state).toBe("waiting_faculty");
+    expect(t.db.status).toBe("awaiting_review");
   });
 });
