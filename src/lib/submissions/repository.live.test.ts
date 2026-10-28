@@ -4,6 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAssignment } from "@/lib/assignments/repository";
 import { getSupabase } from "@/lib/db/supabase";
+import { supabaseWorkflowStore } from "@/lib/workflow/submission/repository";
 import type { Extraction } from "./extractor";
 import {
   getFacultySubmission,
@@ -28,12 +29,16 @@ const bytes = new TextEncoder().encode("%PDF-1.7 fictional live test file");
 
 let assignmentId = "";
 const objectPaths: string[] = [];
-let extract = vi.fn();
 
-const deps = (): SubmissionDeps => ({ store: supabaseStore, storage: supabaseStorage, extract: extract as SubmissionDeps["extract"] });
-const submit = async (studentName: string) => {
+const deps = (): SubmissionDeps => ({ store: supabaseStore, storage: supabaseStorage });
+/** Uploads a file, then saves the text the workflow's extract_text step would have read from it. */
+const submit = async (studentName: string, extraction: Extraction | null = typed) => {
   const id = await submitAnswers({ assignmentId, studentName, fileName: "answers.pdf", bytes, type: "pdf" }, deps());
   objectPaths.push(`${assignmentId}/${id}.pdf`);
+  if (extraction) {
+    const { text, ...info } = extraction;
+    await supabaseWorkflowStore.saveExtraction(id, text, info);
+  }
   return id;
 };
 
@@ -54,7 +59,6 @@ describe.skipIf(!configured)("submissions (live Supabase, needs migration 0008)"
   });
 
   it("stores the original file privately and saves the text it was read from", async () => {
-    extract = vi.fn().mockResolvedValue(typed);
     const id = await submit("Asha Fictional");
 
     const downloaded = await supabaseStorage.download(`${assignmentId}/${id}.pdf`);
@@ -104,8 +108,8 @@ describe.skipIf(!configured)("submissions (live Supabase, needs migration 0008)"
   });
 
   it("a scanned file is kept and marked needs_ocr with a reason, its warnings saved", async () => {
-    extract = vi.fn().mockResolvedValue(scanned);
-    const id = await submit("Chitra Fictional");
+    const id = await submit("Chitra Fictional", scanned);
+    await supabaseWorkflowStore.markNeedsOcr(id, "This looks like a scanned or image-only PDF. Please upload a PDF with typed text.");
     const faculty = await getFacultySubmission(id);
     expect(faculty).toMatchObject({ status: "needs_ocr", hasText: true });
     expect(faculty?.error).toMatch(/scanned or image-only PDF/);
@@ -114,32 +118,34 @@ describe.skipIf(!configured)("submissions (live Supabase, needs migration 0008)"
     expect(student?.error).toMatch(/scanned or image-only PDF/);
   });
 
-  it("a failed submission is kept, can be retried once, and then recovers", async () => {
-    extract = vi.fn().mockRejectedValueOnce(Object.assign(new Error("down"), { userMessage: "The text-reading service is not running." }));
+  it("the workflow's database writes only change a submission that is still processing", async () => {
+    const id = await submit("Gita Fictional");
+    await supabaseWorkflowStore.setFailed(id, "Marking could not be completed. Please try again.");
+    await supabaseWorkflowStore.markNeedsOcr(id, "ignored"); // no longer processing: no change
+    expect(await getStudentSubmission(id)).toMatchObject({ status: "failed", error: "Marking could not be completed. Please try again." });
+  });
+
+  it("a failed submission is kept, can be retried once, and then goes back to processing with its text kept", async () => {
     const id = await submit("Dev Fictional");
+    await supabaseStore.setFailed(id, "The text-reading service is not running.");
     expect(await getStudentSubmission(id)).toMatchObject({ status: "failed", error: "The text-reading service is not running." });
 
-    extract = vi.fn().mockResolvedValue(typed);
     const results = await Promise.allSettled([retrySubmission(id, deps()), retrySubmission(id, deps())]);
     expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]); // only one retry can claim it
-    expect(extract).toHaveBeenCalledTimes(1);
     expect(await getStudentSubmission(id)).toMatchObject({ status: "processing", error: null });
     expect((await getFacultySubmission(id))?.extractedText).toBe(typed.text);
   });
 
   it("only a failed submission can be retried", async () => {
-    extract = vi.fn().mockResolvedValue(typed);
     const id = await submit("Esha Fictional");
     await expect(retrySubmission(id, deps())).rejects.toMatchObject({ code: "not_failed" });
     await expect(retrySubmission("00000000-0000-4000-8000-000000000000", deps())).rejects.toMatchObject({ code: "not_found" });
   });
 
   it("if the file cannot be stored the submission is kept as failed, not lost", async () => {
-    extract = vi.fn().mockResolvedValue(typed);
     const failing = { ...deps(), storage: { ...supabaseStorage, upload: vi.fn().mockRejectedValue(new Error("bucket down")) } };
     const id = await submitAnswers({ assignmentId, studentName: "Farid Fictional", fileName: "a.pdf", bytes, type: "pdf" }, failing);
     expect(await getStudentSubmission(id)).toMatchObject({ status: "failed", error: "Your file could not be saved. Please upload it again." });
-    expect(extract).not.toHaveBeenCalled();
   });
 
   it("the storage bucket refuses files that are not PDF or DOCX", async () => {

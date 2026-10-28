@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   fetchFacultyAssignment: vi.fn(),
   runAiMarking: vi.fn(),
   decideSubmission: vi.fn(),
+  fetchWorkflowProgress: vi.fn(),
 }));
 vi.mock("@/lib/api/client", () => api);
 
@@ -44,6 +45,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
   api.fetchMySubmissions.mockResolvedValue([]);
+  api.fetchWorkflowProgress.mockResolvedValue({ state: "running", steps: [], failure: null });
 });
 
 describe("StudentSubmitSection", () => {
@@ -110,7 +112,7 @@ describe("StudentSubmitSection", () => {
     await user.type(screen.getByLabelText("Your name"), "Asha Fictional");
     await user.upload(screen.getByLabelText("Your answers (PDF or DOCX)"), pdf());
     await user.click(screen.getByRole("button", { name: "Submit answers" }));
-    expect(screen.getByRole("status")).toHaveTextContent("Uploading and reading your file");
+    expect(screen.getByRole("status")).toHaveTextContent("Uploading your file");
     expect(screen.getByRole("button", { name: "Uploading…" })).toBeDisabled();
     api.fetchMySubmissions.mockResolvedValue([mine({ status: "awaiting_review" })]);
     finish({ ok: true, submission: mine() });

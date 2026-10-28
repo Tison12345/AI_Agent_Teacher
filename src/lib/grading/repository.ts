@@ -1,13 +1,11 @@
 import "server-only";
 import { z } from "zod";
 import { getSupabase } from "@/lib/db/supabase";
-import { getGeminiClient, getGeminiModel } from "@/lib/gemini/client";
 import { RepositoryError } from "@/lib/projects/repository";
 import { QuestionSchema } from "@/lib/schemas/assignment";
 import { DecisionRecordSchema, SubmissionStatusSchema, type DecisionRecord } from "@/lib/schemas/submission";
 import type { SubmissionDecisionInput } from "@/lib/validation/submission-decision";
-import { generateGrading } from "./generator";
-import type { GradingDeps, GradingStore, GradingSubject } from "./service";
+import type { GradingSubject } from "./types";
 
 const SubmissionRowSchema = z.object({
   assignment_id: z.string(),
@@ -21,65 +19,32 @@ const AssignmentRowSchema = z.object({
   reference_answers: z.record(z.string(), z.string()).nullable(),
 });
 
-export const supabaseGradingStore: GradingStore = {
-  async load(id): Promise<GradingSubject | null> {
-    const db = getSupabase();
-    const { data, error } = await db.from("submissions").select("assignment_id, status, extracted_text").eq("id", id).maybeSingle();
-    if (error) throw new RepositoryError("db_error", error.message);
-    if (!data) return null;
-    const submission = SubmissionRowSchema.safeParse(data);
-    if (!submission.success) throw new RepositoryError("invalid_data", "Unexpected row shape from database.");
+/** Everything the marking step needs for one submission, or null when it does not exist. */
+export async function loadGradingSubject(id: string): Promise<GradingSubject | null> {
+  const db = getSupabase();
+  const { data, error } = await db.from("submissions").select("assignment_id, status, extracted_text").eq("id", id).maybeSingle();
+  if (error) throw new RepositoryError("db_error", error.message);
+  if (!data) return null;
+  const submission = SubmissionRowSchema.safeParse(data);
+  if (!submission.success) throw new RepositoryError("invalid_data", "Unexpected row shape from database.");
 
-    const { data: assignmentRow, error: assignmentError } = await db
-      .from("assignments")
-      .select("title, instructions, questions, reference_answers")
-      .eq("id", submission.data.assignment_id)
-      .maybeSingle();
-    if (assignmentError) throw new RepositoryError("db_error", assignmentError.message);
-    const assignment = AssignmentRowSchema.safeParse(assignmentRow);
-    if (!assignment.success) throw new RepositoryError("invalid_data", "Stored assignment failed validation.");
+  const { data: assignmentRow, error: assignmentError } = await db
+    .from("assignments")
+    .select("title, instructions, questions, reference_answers")
+    .eq("id", submission.data.assignment_id)
+    .maybeSingle();
+  if (assignmentError) throw new RepositoryError("db_error", assignmentError.message);
+  const assignment = AssignmentRowSchema.safeParse(assignmentRow);
+  if (!assignment.success) throw new RepositoryError("invalid_data", "Stored assignment failed validation.");
 
-    return {
-      status: submission.data.status,
-      extractedText: submission.data.extracted_text,
-      title: assignment.data.title,
-      instructions: assignment.data.instructions,
-      questions: assignment.data.questions,
-      referenceAnswers: assignment.data.reference_answers,
-    };
-  },
-
-  async saveResult(id, result, model) {
-    // One conditional update. The database validates the marks (0..max, every question once), computes
-    // ai_total itself, and refuses to change a result that is already saved.
-    const { data, error } = await getSupabase()
-      .from("submissions")
-      .update({ ai_result: result, ai_model: model, status: "awaiting_review" })
-      .eq("id", id)
-      .eq("status", "processing")
-      .is("ai_result", null)
-      .select("id");
-    if (error) throw new RepositoryError("db_error", error.message);
-    return (data ?? []).length > 0;
-  },
-
-  async setFailed(id, reason) {
-    const { error } = await getSupabase()
-      .from("submissions")
-      .update({ status: "failed", error: reason.slice(0, 300) })
-      .eq("id", id)
-      .eq("status", "processing");
-    if (error) throw new RepositoryError("db_error", error.message);
-  },
-};
-
-/**
- * The real dependencies: Gemini (server key) and the Supabase store. A missing key is reported when marking
- * starts, so the submission is kept as failed with a reason instead of the request crashing.
- */
-export function defaultGradingDeps(): GradingDeps {
-  const model = getGeminiModel();
-  return { store: supabaseGradingStore, generate: (input) => generateGrading(input, { client: getGeminiClient(), model }), model };
+  return {
+    status: submission.data.status,
+    extractedText: submission.data.extracted_text,
+    title: assignment.data.title,
+    instructions: assignment.data.instructions,
+    questions: assignment.data.questions,
+    referenceAnswers: assignment.data.reference_answers,
+  };
 }
 
 // ---- Faculty decisions --------------------------------------------------------------------------------

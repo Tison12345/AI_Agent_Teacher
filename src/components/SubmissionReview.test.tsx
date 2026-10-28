@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   fetchFacultyAssignment: vi.fn(),
   runAiMarking: vi.fn(),
   decideSubmission: vi.fn(),
+  fetchWorkflowProgress: vi.fn(),
 }));
 vi.mock("@/lib/api/client", () => api);
 
@@ -61,6 +62,7 @@ const submission = (over: Partial<FacultySubmission> = {}): FacultySubmission =>
 beforeEach(() => {
   vi.clearAllMocks();
   api.fetchFacultyAssignment.mockResolvedValue(assignment);
+  api.fetchWorkflowProgress.mockResolvedValue({ state: "complete", steps: [], failure: null });
 });
 
 async function open(s: FacultySubmission) {

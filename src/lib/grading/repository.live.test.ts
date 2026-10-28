@@ -7,8 +7,8 @@ import { getSupabase } from "@/lib/db/supabase";
 import type { AiResult } from "@/lib/schemas/submission";
 import { getFacultySubmission, getStudentSubmission, supabaseStorage, supabaseStore } from "@/lib/submissions/repository";
 import { submitAnswers } from "@/lib/submissions/service";
-import { DecisionError, decideSubmission, supabaseGradingStore } from "./repository";
-import { gradeSubmission, type GradingDeps } from "./service";
+import { supabaseWorkflowStore } from "@/lib/workflow/submission/repository";
+import { DecisionError, decideSubmission } from "./repository";
 
 const configured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY);
 const db = () => getSupabase();
@@ -26,20 +26,29 @@ const aiResult: AiResult = {
 
 let assignmentId = "";
 const objectPaths: string[] = [];
-const gradingDeps = (result: AiResult = aiResult): GradingDeps => ({ store: supabaseGradingStore, generate: async () => result, model: "fake-model" });
+/** The marking step's database write, as the workflow's save_result and park_failed nodes do it. */
+async function mark(id: string, result: AiResult = aiResult): Promise<"graded" | "skipped" | "failed"> {
+  try {
+    return (await supabaseWorkflowStore.saveResult(id, result, "fake-model")) === "saved" ? "graded" : "skipped";
+  } catch {
+    await supabaseWorkflowStore.setFailed(id, "Marking could not be completed. Please try again.");
+    return "failed";
+  }
+}
 
 /** A processing submission with its text read, as Phase B leaves it. */
 async function readySubmission(name: string): Promise<string> {
   const id = await submitAnswers(
     { assignmentId, studentName: name, fileName: "answers.pdf", bytes, type: "pdf" },
-    { store: supabaseStore, storage: supabaseStorage, extract: async () => typed },
+    { store: supabaseStore, storage: supabaseStorage },
   );
+  await supabaseWorkflowStore.saveExtraction(id, typed.text, { pages: typed.pages, warnings: typed.warnings });
   objectPaths.push(`${assignmentId}/${id}.pdf`);
   return id;
 }
 async function markedSubmission(name: string): Promise<string> {
   const id = await readySubmission(name);
-  expect(await gradeSubmission(id, gradingDeps())).toBe("graded");
+  expect(await mark(id)).toBe("graded");
   return id;
 }
 
@@ -73,7 +82,7 @@ describe.skipIf(!configured)("AI recommendation and faculty decision (live Supab
   it("the recommendation is written once: a second marking is skipped and cannot overwrite it", async () => {
     const id = await markedSubmission("Bala Fictional");
     const other: AiResult = { ...aiResult, questions: aiResult.questions.map((q) => ({ ...q, marks: 0, quotes: [] })) };
-    expect(await gradeSubmission(id, gradingDeps(other))).toBe("skipped");
+    expect(await mark(id, other)).toBe("skipped");
     expect((await getFacultySubmission(id))?.aiTotal).toBe(6);
     // Even a direct write is refused by the database.
     const { error } = await db().from("submissions").update({ ai_result: other }).eq("id", id);
@@ -83,7 +92,7 @@ describe.skipIf(!configured)("AI recommendation and faculty decision (live Supab
   it("the database refuses marks above a question's maximum, so the submission stays unmarked", async () => {
     const id = await readySubmission("Chitra Fictional");
     const tooHigh: AiResult = { ...aiResult, questions: [{ ...aiResult.questions[0], marks: 6 }, aiResult.questions[1]] };
-    expect(await gradeSubmission(id, gradingDeps(tooHigh))).toBe("failed");
+    expect(await mark(id, tooHigh)).toBe("failed");
     const faculty = await getFacultySubmission(id);
     expect(faculty).toMatchObject({ status: "failed", aiTotal: null, aiResult: null });
     expect(faculty?.error).toBe("Marking could not be completed. Please try again.");

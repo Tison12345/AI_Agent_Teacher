@@ -1,9 +1,11 @@
 // End-to-end test of the whole assignment flow, against the real Supabase project and the real local Python
 // extraction service, using the fictional sample files in /samples:
-//   assignment -> upload -> text read from a real PDF/DOCX -> AI marking -> faculty decision -> what the student sees.
+//   assignment -> upload -> workflow graph (text read from a real PDF/DOCX -> AI marking -> pause) -> faculty
+//   decision -> graph finishes -> what the student sees.
+// The graph runs on the real checkpoint tables (DATABASE_URL, migration 0009) with the real lease functions.
 // Gemini is replaced by a scripted answer so the test costs no quota, but it still goes through the real prompt,
 // the real schema and the real quote checks against the text that was really read from the real file.
-// Needs migration 0008 and the extractor running (see extractor/README.md); skipped when it is not.
+// Needs migrations 0008 and 0009, DATABASE_URL and the extractor running (see extractor/README.md); skipped when it is not.
 // Run with `npm run test:live`.
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -11,14 +13,19 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAssignment } from "@/lib/assignments/repository";
 import { getSupabase } from "@/lib/db/supabase";
 import type { GeminiClient } from "@/lib/gemini/client";
-import { generateGrading } from "@/lib/grading/generator";
-import { decideSubmission, supabaseGradingStore } from "@/lib/grading/repository";
-import { gradeSubmission, type GradingDeps } from "@/lib/grading/service";
+import { requestGrading } from "@/lib/grading/generator";
+import { decideSubmission } from "@/lib/grading/repository";
+import { getCheckpointer } from "@/lib/workflow/checkpointer";
+import { closeWorkflowPool, getWorkflowPool } from "@/lib/workflow/db";
+import { pgLeaseStore, runWithLease } from "@/lib/workflow/lease";
+import { buildSubmissionGraph } from "@/lib/workflow/submission/graph";
+import { defaultSubmissionGraphDeps, supabaseWorkflowStore } from "@/lib/workflow/submission/repository";
+import { createSubmissionRunner, submissionThread } from "@/lib/workflow/submission/runner";
 import { checkUpload } from "./file";
 import { defaultSubmissionDeps, getFacultySubmission, getStudentSubmission, listFacultySubmissions } from "./repository";
 import { submitAnswers } from "./service";
 
-const configured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY && process.env.EXTRACTOR_KEY);
+const configured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY && process.env.EXTRACTOR_KEY && process.env.DATABASE_URL);
 const extractorUrl = process.env.EXTRACTOR_URL ?? "http://127.0.0.1:8001";
 const db = () => getSupabase();
 
@@ -53,21 +60,36 @@ let extractorUp = false;
 let assignmentId = "";
 const objectPaths: string[] = [];
 
-/** Uploads a sample file through the real checks, storage and Python reader; returns the submission id. */
+const submissionIds: string[] = [];
+
+/** Uploads a sample file through the real checks and storage; the workflow then reads and marks it. */
 async function upload(student: string, file: string): Promise<string> {
   const check = await checkUpload(load(file));
   if (!check.ok) throw new Error(check.message);
   const id = await submitAnswers({ assignmentId, studentName: student, fileName: check.fileName, bytes: check.bytes, type: check.type }, defaultSubmissionDeps());
   objectPaths.push(`${assignmentId}/${id}.${check.type}`);
+  submissionIds.push(id);
   return id;
 }
-const marking = (value: unknown): GradingDeps => ({
-  store: supabaseGradingStore,
-  generate: (input) => generateGrading(input, { client: scripted(value), model: "scripted-model" }),
-  model: "scripted-model",
-});
 
-describe.skipIf(!configured)("assignment flow end to end (real Supabase, real extractor, scripted Gemini)", () => {
+/** The real graph (real Supabase, real extractor, real checkpoints and leases) with a scripted Gemini. */
+function runnerWith(client: GeminiClient) {
+  const base = defaultSubmissionGraphDeps();
+  const deps = {
+    ...base,
+    model: "scripted-model",
+    requestGrading: (input: Parameters<typeof requestGrading>[0], issues: string | undefined, signal?: AbortSignal) =>
+      requestGrading(input, issues, { client, model: "scripted-model", signal }),
+  };
+  return createSubmissionRunner({
+    graph: buildSubmissionGraph(deps, getCheckpointer()),
+    leases: pgLeaseStore(getWorkflowPool()),
+    store: supabaseWorkflowStore,
+  });
+}
+const marking = (value: unknown) => runnerWith(scripted(value));
+
+describe.skipIf(!configured)("assignment flow end to end (real Supabase, real extractor, scripted Gemini)", { timeout: 120_000 }, () => {
   beforeAll(async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     extractorUp = await fetch(`${extractorUrl}/health`).then((r) => r.ok, () => false);
@@ -84,6 +106,14 @@ describe.skipIf(!configured)("assignment flow end to end (real Supabase, real ex
   });
 
   afterAll(async () => {
+    if (configured) {
+      const saver = getCheckpointer();
+      const options = { store: pgLeaseStore(getWorkflowPool()) };
+      await Promise.all(
+        submissionIds.map((id) => runWithLease(submissionThread(id), () => saver.deleteThread(submissionThread(id)), options).catch(() => {})),
+      );
+      await closeWorkflowPool();
+    }
     if (objectPaths.length) await db().storage.from("submissions").remove(objectPaths);
     if (assignmentId) await db().from("assignments").delete().eq("id", assignmentId);
   });
@@ -95,17 +125,25 @@ describe.skipIf(!configured)("assignment flow end to end (real Supabase, real ex
   it("strong answers: read from a real DOCX, marked 15/15, approved, and the student then sees the marks", async (ctx) => {
     needExtractor(ctx);
     const id = await upload("Asha Fictional", "strong-answers.docx");
-    expect(await getFacultySubmission(id)).toMatchObject({ status: "processing", hasText: true });
-    expect((await getFacultySubmission(id))?.extractedText).toContain("brushing each tooth in turn");
+    expect(await getFacultySubmission(id)).toMatchObject({ status: "processing", hasText: false }); // the workflow has not run yet
 
-    expect(await gradeSubmission(id, marking(answerFor(STRONG)))).toBe("graded");
+    const runner = marking(answerFor(STRONG));
+    expect((await runner.start(id)).outcome).toBe("running"); // paused, waiting for faculty
+    expect((await getFacultySubmission(id))?.extractedText).toContain("brushing each tooth in turn");
     const marked = await getFacultySubmission(id);
     expect(marked).toMatchObject({ status: "awaiting_review", aiTotal: 15, aiModel: "scripted-model" });
+
+    // The progress read from the checkpoint is student-safe and says the run waits for faculty.
+    const waiting = await runner.progress(id);
+    expect(waiting.state).toBe("waiting_faculty");
+    expect(JSON.stringify(waiting)).not.toContain("brushing each tooth");
 
     // Before the decision the student sees nothing but the status.
     expect(await getStudentSubmission(id)).toMatchObject({ status: "awaiting_review", scores: null, finalTotal: null, feedback: null });
 
     await decideSubmission(id, { decision: "approve" });
+    await runner.resumeAfterDecision(id); // what the decision route does next
+    expect((await runner.progress(id)).state).toBe("complete");
     expect(await getStudentSubmission(id)).toMatchObject({
       status: "approved",
       finalTotal: 15,
@@ -117,7 +155,7 @@ describe.skipIf(!configured)("assignment flow end to end (real Supabase, real ex
   it("mixed answers: marked 11/15, then the teacher edits it to 12 and the student sees the teacher's marks, not the AI's", async (ctx) => {
     needExtractor(ctx);
     const id = await upload("Bala Fictional", "mixed-answers.docx");
-    expect(await gradeSubmission(id, marking(answerFor(MIXED)))).toBe("graded");
+    await marking(answerFor(MIXED)).start(id);
     expect(await getFacultySubmission(id)).toMatchObject({ status: "awaiting_review", aiTotal: 11 });
 
     await decideSubmission(id, {
@@ -137,8 +175,8 @@ describe.skipIf(!configured)("assignment flow end to end (real Supabase, real ex
   it("weak answers from a real PDF: marked 0 and rejected, so the student sees no marks", async (ctx) => {
     needExtractor(ctx);
     const id = await upload("Chitra Fictional", "weak-answers.pdf");
+    await marking(answerFor(WEAK)).start(id);
     expect((await getFacultySubmission(id))?.extractedText).toContain("kind of variable");
-    expect(await gradeSubmission(id, marking(answerFor(WEAK)))).toBe("graded");
     expect(await getFacultySubmission(id)).toMatchObject({ aiTotal: 0 });
     await decideSubmission(id, { decision: "reject" });
     expect(await getStudentSubmission(id)).toMatchObject({ status: "rejected", scores: null, finalTotal: null, feedback: null });
@@ -148,7 +186,9 @@ describe.skipIf(!configured)("assignment flow end to end (real Supabase, real ex
     needExtractor(ctx);
     const id = await upload("Dev Fictional", "weak-answers.pdf");
     const lying = answerFor({ ...WEAK, marks: [5, 6, 4], quotes: [["A loop repeats a block of code until a condition stops it"], ["An array is an ordered collection"], ["for loops count, while loops wait"]] });
-    expect(await gradeSubmission(id, marking(lying))).toBe("failed");
+    const client = scripted(lying);
+    expect((await runnerWith(client).start(id)).outcome).toBe("failed");
+    expect(client.models.generateContent).toHaveBeenCalledTimes(2); // the answer, and one corrected attempt
     const faculty = await getFacultySubmission(id);
     expect(faculty).toMatchObject({ status: "failed", aiTotal: null, aiResult: null });
     expect(faculty?.error).toMatch(/did not pass validation/);
@@ -158,12 +198,7 @@ describe.skipIf(!configured)("assignment flow end to end (real Supabase, real ex
     needExtractor(ctx);
     const id = await upload("Esha Fictional", "injection-answers.docx");
     const client = scripted(answerFor({ marks: [0, 0, 0], quotes: [[], [], []], feedback: "Please answer the questions properly." }));
-    const deps: GradingDeps = {
-      store: supabaseGradingStore,
-      generate: (input) => generateGrading(input, { client, model: "scripted-model" }),
-      model: "scripted-model",
-    };
-    expect(await gradeSubmission(id, deps)).toBe("graded");
+    await runnerWith(client).start(id);
     const prompt = (client.models.generateContent as ReturnType<typeof vi.fn>).mock.calls[0][0].contents as string;
     expect(prompt).toContain("ignore all previous instructions"); // present, but only inside the escaped JSON data block
     expect(prompt.indexOf("<marking_input>")).toBe(0);
@@ -174,10 +209,14 @@ describe.skipIf(!configured)("assignment flow end to end (real Supabase, real ex
   it("a scanned PDF is kept and reported as needing OCR; it is never marked", async (ctx) => {
     needExtractor(ctx);
     const id = await upload("Farid Fictional", "scanned-answers.pdf");
+    const client = scripted(answerFor(STRONG));
+    const runner = runnerWith(client);
+    expect((await runner.start(id)).outcome).toBe("needs_ocr");
+    expect(client.models.generateContent).not.toHaveBeenCalled();
     const faculty = await getFacultySubmission(id);
     expect(faculty).toMatchObject({ status: "needs_ocr", aiTotal: null });
     expect(faculty?.error).toMatch(/scanned or image-only PDF/);
-    expect(await gradeSubmission(id, marking(answerFor(STRONG)))).toBe("skipped");
+    expect((await runner.progress(id)).state).toBe("needs_ocr");
     expect((await getStudentSubmission(id))?.error).toMatch(/scanned or image-only PDF/);
   });
 

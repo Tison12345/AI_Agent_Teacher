@@ -1,13 +1,13 @@
 import { z } from "zod";
 import { errorResponse, handleUnexpected } from "@/lib/api/errors";
 import { getStudentAssignment } from "@/lib/assignments/repository";
-import { markInBackground } from "@/lib/grading/background";
 import { checkUpload, MAX_UPLOAD_BYTES } from "@/lib/submissions/file";
 import { submissionErrorResponse } from "@/lib/submissions/http";
 import { defaultSubmissionDeps, getStudentSubmission, listStudentSubmissions } from "@/lib/submissions/repository";
 import { submitAnswers } from "@/lib/submissions/service";
+import { startInBackground } from "@/lib/workflow/submission";
 
-// Reading a file, and the AI marking that follows the response, can take a while.
+// The workflow (reading the file, the AI marking) runs after the response is sent.
 export const maxDuration = 60;
 
 const NameSchema = z
@@ -29,7 +29,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/assignments/
   }
 }
 
-/** Receives the student's file (multipart: studentName, file), stores it and reads its text. */
+/** Receives the student's file (multipart: studentName, file), stores it and starts its workflow (read, mark, review). */
 export async function POST(request: Request, ctx: RouteContext<"/api/assignments/[id]/submissions">) {
   const { id } = await ctx.params;
   if (!z.uuid().safeParse(id).success) return errorResponse(400, "invalid_id", "Assignment id must be a valid UUID.");
@@ -69,7 +69,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/assignments
       defaultSubmissionDeps(),
     );
     const submission = await getStudentSubmission(submissionId);
-    markInBackground(submissionId); // marks it only if the text was read; the student is not kept waiting
+    startInBackground(submissionId); // reads and marks it; the student is not kept waiting
     return Response.json({ submission }, { status: 201 });
   } catch (error) {
     return submissionErrorResponse(error);

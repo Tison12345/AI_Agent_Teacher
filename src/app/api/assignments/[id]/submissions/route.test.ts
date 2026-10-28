@@ -17,8 +17,8 @@ vi.mock("@/lib/submissions/service", async (importOriginal) => ({
   ...service,
 }));
 vi.mock("@/lib/db/supabase", () => ({ StorageConfigError: class StorageConfigError extends Error {} }));
-const background = vi.hoisted(() => ({ markInBackground: vi.fn() }));
-vi.mock("@/lib/grading/background", () => background);
+const background = vi.hoisted(() => ({ startInBackground: vi.fn() }));
+vi.mock("@/lib/workflow/submission", () => background);
 
 import { GET as FACULTY_LIST } from "@/app/api/faculty/assignments/[id]/submissions/route";
 import { GET as FACULTY_ONE } from "@/app/api/faculty/submissions/[id]/route";
@@ -60,12 +60,12 @@ describe("POST /api/assignments/[id]/submissions", () => {
 
   it("starts the AI marking after the upload, without waiting for it", async () => {
     await upload({ studentName: "Asha Fictional", file: pdf() });
-    expect(background.markInBackground).toHaveBeenCalledWith(S);
+    expect(background.startInBackground).toHaveBeenCalledWith(S);
   });
 
   it("does not start marking for an upload that was refused", async () => {
     await upload({ studentName: "Asha Fictional", file: "not a file" });
-    expect(background.markInBackground).not.toHaveBeenCalled();
+    expect(background.startInBackground).not.toHaveBeenCalled();
   });
 
   it("the response is read from the student view, never the faculty one", async () => {
@@ -152,7 +152,7 @@ describe("POST /api/submissions/[id]/retry", () => {
     const res = await retry();
     expect(res.status).toBe(200);
     expect((await res.json()).submission).toEqual(studentView);
-    expect(background.markInBackground).toHaveBeenCalledWith(S); // a retry that has its text goes on to marking
+    expect(background.startInBackground).toHaveBeenCalledWith(S); // a retry that has its text goes on to marking
   });
 
   it("409 when the submission is not failed, 404 when it does not exist, 400 for a bad id", async () => {

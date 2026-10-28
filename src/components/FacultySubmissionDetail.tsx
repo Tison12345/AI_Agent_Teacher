@@ -9,6 +9,7 @@ import { OpenAccessNotice } from "./AssignmentParts";
 import { FACULTY_STATUS } from "./submission-labels";
 import { AiRecommendation, DecisionPanel, OfficialResult } from "./SubmissionReview";
 import { Disclosure } from "./ui";
+import { WorkflowProgress } from "./WorkflowProgress";
 
 type Load =
   | { status: "loading" }
@@ -119,6 +120,13 @@ function Detail({
           {s.error}
         </p>
       )}
+
+      <section aria-labelledby="workflow-heading" className="card space-y-3 p-6">
+        <h2 id="workflow-heading" className="text-lg font-semibold">
+          Workflow
+        </h2>
+        <WorkflowProgress submissionId={s.id} />
+      </section>
 
       <section aria-labelledby="original-heading" className="card space-y-2 p-6">
         <h2 id="original-heading" className="text-lg font-semibold">

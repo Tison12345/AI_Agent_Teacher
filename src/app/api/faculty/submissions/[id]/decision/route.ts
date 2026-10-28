@@ -3,6 +3,7 @@ import { errorResponse, handleUnexpected } from "@/lib/api/errors";
 import { DecisionError, decideSubmission } from "@/lib/grading/repository";
 import { getFacultySubmission } from "@/lib/submissions/repository";
 import { submissionDecisionSchema } from "@/lib/validation/submission-decision";
+import { getSubmissionRunner } from "@/lib/workflow/submission";
 
 /**
  * Demo build: no login. The official decision: approve the AI's recommendation, edit it, or reject. It is final.
@@ -31,6 +32,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/faculty/sub
 
   try {
     await decideSubmission(id, parsed.data);
+    // The database function above made the decision final. Waking the paused workflow is best-effort and
+    // cannot undo or change it; a run that is not woken is picked up by Resume.
+    await getSubmissionRunner().resumeAfterDecision(id).catch(() => {});
     return Response.json({ submission: await getFacultySubmission(id) });
   } catch (error) {
     if (error instanceof DecisionError) {

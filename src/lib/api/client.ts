@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { WorkflowProgressSchema, type WorkflowProgress } from "@/lib/workflow/submission/progress";
 import type { ProjectSubmitResult } from "@/components/ProjectForm";
 import { ProjectSchema, type Project } from "@/lib/schemas/project";
 import {
@@ -457,4 +458,11 @@ export function runAiMarking(submissionId: string): Promise<SubmissionActionResu
 /** Faculty: the official decision on a submission. It is final. */
 export function decideSubmission(submissionId: string, decision: SubmissionDecisionInput): Promise<SubmissionActionResult> {
   return submissionAction(`/api/faculty/submissions/${encodeURIComponent(submissionId)}/decision`, decision);
+}
+
+/** Where a submission is in its workflow: the allowlisted progress read from the graph's checkpoint. */
+export async function fetchWorkflowProgress(submissionId: string): Promise<WorkflowProgress> {
+  const res = await fetch(`/api/submissions/${encodeURIComponent(submissionId)}/workflow`, { cache: "no-store" });
+  if (!res.ok) throw new Error(await readError(res));
+  return z.object({ progress: WorkflowProgressSchema }).parse(await res.json()).progress;
 }

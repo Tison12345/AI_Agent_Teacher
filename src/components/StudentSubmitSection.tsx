@@ -6,6 +6,7 @@ import type { Question } from "@/lib/schemas/assignment";
 import type { StudentSubmission } from "@/lib/schemas/submission";
 import { STUDENT_STATUS } from "./submission-labels";
 import { Icon } from "./ui";
+import { WorkflowProgress } from "./WorkflowProgress";
 
 const NAME_KEY = "coLearning.studentName";
 const MAX_BYTES = 4 * 1024 * 1024;
@@ -189,7 +190,7 @@ export function StudentSubmitSection({
           </div>
           {uploading && (
             <p role="status" className="text-sm text-link">
-              Uploading and reading your file… this can take a few seconds.
+              Uploading your file…
             </p>
           )}
           {message && !uploading && (
@@ -230,7 +231,14 @@ export function StudentSubmitSection({
         {shownName.length >= 2 && list.status === "ready" && list.items.length > 0 && (
           <ul className="space-y-3">
             {list.items.map((s) => (
-              <SubmissionCard key={s.id} submission={s} maxMarks={maxMarks} questions={questions} onRetry={() => handleRetry(s.id)} />
+              <SubmissionCard
+                key={s.id}
+                submission={s}
+                maxMarks={maxMarks}
+                questions={questions}
+                onRetry={() => handleRetry(s.id)}
+                onWorkflowChange={() => setReload((n) => n + 1)}
+              />
             ))}
           </ul>
         )}
@@ -244,11 +252,13 @@ function SubmissionCard({
   maxMarks,
   questions,
   onRetry,
+  onWorkflowChange,
 }: {
   submission: StudentSubmission;
   maxMarks: number;
   questions: Question[];
   onRetry: () => void;
+  onWorkflowChange: () => void;
 }) {
   const status = STUDENT_STATUS[s.status];
   return (
@@ -259,7 +269,9 @@ function SubmissionCard({
       </div>
       <p className="text-xs text-muted">Submitted {new Date(s.createdAt).toLocaleString()}</p>
 
-      {s.status === "processing" && <p className="text-muted">Your file is being read and checked. This page updates by itself.</p>}
+      {(s.status === "processing" || s.status === "awaiting_review") && (
+        <WorkflowProgress submissionId={s.id} onStateChange={onWorkflowChange} />
+      )}
       {s.status === "awaiting_review" && <p className="text-muted">Waiting for your teacher to review. You will see your marks once they have.</p>}
       {(s.status === "needs_ocr" || s.status === "failed") && s.error && (
         <p role="alert" className="alert-warning">

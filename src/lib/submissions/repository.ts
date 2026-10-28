@@ -14,7 +14,6 @@ import {
   type FacultySubmissionSummary,
   type StudentSubmission,
 } from "@/lib/schemas/submission";
-import { extractText } from "./extractor";
 import type { UploadType } from "./file";
 import type { FileStorage, SubmissionDeps, SubmissionStore } from "./service";
 
@@ -191,13 +190,8 @@ export const supabaseStore: SubmissionStore = {
     if (error) throw new RepositoryError("db_error", error.message);
   },
 
-  async saveExtraction(id, text, info) {
-    const { error } = await getSupabase().from("submissions").update({ extracted_text: text, extraction: info }).eq("id", id);
-    if (error) throw new RepositoryError("db_error", error.message);
-  },
-
-  async setStatus(id, status, reason) {
-    const { error } = await getSupabase().from("submissions").update({ status, error: reason.slice(0, 300) }).eq("id", id);
+  async setFailed(id, reason) {
+    const { error } = await getSupabase().from("submissions").update({ status: "failed", error: reason.slice(0, 300) }).eq("id", id);
     if (error) throw new RepositoryError("db_error", error.message);
   },
 
@@ -208,12 +202,9 @@ export const supabaseStore: SubmissionStore = {
       .update({ status: "processing", error: null })
       .eq("id", id)
       .eq("status", "failed")
-      .select("file_path, file_type, extracted_text")
-      .maybeSingle();
+      .select("id");
     if (error) throw new RepositoryError("db_error", error.message);
-    if (!data) return null;
-    const row = data as { file_path: string; file_type: UploadType; extracted_text: string | null };
-    return { filePath: row.file_path, fileType: row.file_type, hasText: row.extracted_text !== null };
+    return (data ?? []).length > 0;
   },
 
   async exists(id) {
@@ -238,7 +229,7 @@ export const supabaseStorage: FileStorage = {
   },
 };
 
-/** The real dependencies: Supabase tables and Storage, and the local Python extraction service. */
+/** The real dependencies: Supabase tables and Storage. */
 export function defaultSubmissionDeps(): SubmissionDeps {
-  return { store: supabaseStore, storage: supabaseStorage, extract: (bytes, type) => extractText(bytes, type) };
+  return { store: supabaseStore, storage: supabaseStorage };
 }

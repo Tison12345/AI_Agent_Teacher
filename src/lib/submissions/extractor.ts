@@ -37,7 +37,7 @@ export function getExtractorConfig(env: NodeJS.ProcessEnv = process.env): Extrac
 export async function extractText(
   bytes: Uint8Array,
   type: UploadType,
-  deps: { config?: ExtractorConfig; fetch?: typeof fetch } = {},
+  deps: { config?: ExtractorConfig; fetch?: typeof fetch; signal?: AbortSignal } = {},
 ): Promise<Extraction> {
   const config = deps.config ?? getExtractorConfig();
   const doFetch = deps.fetch ?? fetch;
@@ -48,7 +48,7 @@ export async function extractText(
       method: "POST",
       headers: { "X-Extractor-Key": config.key, "Content-Type": "application/octet-stream" },
       body: bytes as unknown as BodyInit,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: deps.signal ? AbortSignal.any([AbortSignal.timeout(TIMEOUT_MS), deps.signal]) : AbortSignal.timeout(TIMEOUT_MS),
       cache: "no-store",
     });
   } catch (error) {

@@ -3,22 +3,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const grading = vi.hoisted(() => ({
   decideSubmission: vi.fn(),
-  defaultGradingDeps: vi.fn(() => ({ marker: "grading-deps" })),
 }));
 const submissions = vi.hoisted(() => ({ getFacultySubmission: vi.fn() }));
-const service = vi.hoisted(() => ({ gradeSubmission: vi.fn() }));
+const workflow = vi.hoisted(() => ({ runner: { start: vi.fn(), resumeAfterDecision: vi.fn(async () => {}) } }));
 vi.mock("@/lib/grading/repository", async (importOriginal) => {
   // The real DecisionError class, with the database calls replaced.
   const original = await importOriginal<typeof import("@/lib/grading/repository")>().catch(() => null);
   return { ...(original ?? {}), ...grading };
 });
 vi.mock("@/lib/submissions/repository", () => submissions);
-vi.mock("@/lib/grading/service", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/grading/service")>()),
-  ...service,
-}));
+vi.mock("@/lib/workflow/submission", () => ({ getSubmissionRunner: () => workflow.runner }));
 vi.mock("@/lib/db/supabase", () => ({ getSupabase: vi.fn(), StorageConfigError: class StorageConfigError extends Error {} }));
-vi.mock("@/lib/gemini/client", () => ({ getGeminiClient: vi.fn(), getGeminiModel: () => "test-model" }));
 
 import { POST as GRADE } from "@/app/api/faculty/submissions/[id]/grade/route";
 import { DecisionError } from "@/lib/grading/repository";
@@ -86,33 +81,53 @@ describe("POST /api/faculty/submissions/[id]/decision", () => {
   });
 });
 
+describe("the decision wakes the paused workflow", () => {
+  it("after the database function made the decision, and a failure to wake it changes nothing", async () => {
+    workflow.runner.resumeAfterDecision.mockRejectedValueOnce(new Error("lease held"));
+    const res = await send({ decision: "approve" });
+    expect(res.status).toBe(200);
+    expect(grading.decideSubmission).toHaveBeenCalledTimes(1);
+    expect(workflow.runner.resumeAfterDecision).toHaveBeenCalledWith(S);
+  });
+
+  it("is not woken when the decision itself was refused", async () => {
+    grading.decideSubmission.mockRejectedValueOnce(new DecisionError("already_decided", "final"));
+    expect((await send({ decision: "approve" })).status).toBe(409);
+    expect(workflow.runner.resumeAfterDecision).not.toHaveBeenCalled();
+  });
+});
+
 describe("POST /api/faculty/submissions/[id]/grade", () => {
   const grade = (id = S) => GRADE(new Request("http://localhost", { method: "POST" }), ctx(id));
 
-  it("runs the marking and returns the updated submission", async () => {
-    service.gradeSubmission.mockResolvedValue("graded");
+  it("runs the marking workflow and returns the updated submission", async () => {
+    workflow.runner.start.mockResolvedValue({ outcome: "running" });
     const res = await grade();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ outcome: "graded", submission: decided });
-    expect(service.gradeSubmission).toHaveBeenCalledWith(S, grading.defaultGradingDeps.mock.results[0].value);
+    expect(workflow.runner.start).toHaveBeenCalledWith(S);
   });
 
   it("a failed marking still returns the submission, which now shows the failure", async () => {
-    service.gradeSubmission.mockResolvedValue("failed");
-    expect((await grade()).status).toBe(200);
+    workflow.runner.start.mockResolvedValue({ outcome: "failed" });
+    const res = await grade();
+    expect(res.status).toBe(200);
+    expect((await res.json()).outcome).toBe("failed");
   });
 
   it("refuses a submission that is not ready for marking", async () => {
-    service.gradeSubmission.mockResolvedValue("skipped");
+    workflow.runner.start.mockResolvedValue({ outcome: "skipped" });
     const res = await grade();
     expect(res.status).toBe(409);
     expect((await res.json()).error.code).toBe("not_ready");
   });
 
-  it("is 404 for an unknown submission and 400 for a bad id", async () => {
-    const { SubmissionError } = await import("@/lib/submissions/service");
-    service.gradeSubmission.mockRejectedValue(new SubmissionError("not_found", "Submission not found."));
-    expect((await grade()).status).toBe(404);
+  it("is 409 while the same submission is already being run, and 400 for a bad id", async () => {
+    const { LeaseHeldError } = await import("@/lib/workflow/lease");
+    workflow.runner.start.mockRejectedValue(new LeaseHeldError());
+    const res = await grade();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("already_running");
     expect((await grade("nope")).status).toBe(400);
   });
 });

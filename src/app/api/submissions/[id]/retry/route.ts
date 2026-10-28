@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { errorResponse } from "@/lib/api/errors";
-import { markInBackground } from "@/lib/grading/background";
 import { submissionErrorResponse } from "@/lib/submissions/http";
 import { defaultSubmissionDeps, getStudentSubmission } from "@/lib/submissions/repository";
 import { retrySubmission } from "@/lib/submissions/service";
+import { startInBackground } from "@/lib/workflow/submission";
 
 export const maxDuration = 60;
 
@@ -14,7 +14,7 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/submission
   try {
     await retrySubmission(id, defaultSubmissionDeps());
     const submission = await getStudentSubmission(id);
-    markInBackground(id); // a retry that has its text goes straight on to marking
+    startInBackground(id); // a new workflow run: text already read is reused, not read again
     return Response.json({ submission });
   } catch (error) {
     return submissionErrorResponse(error);
