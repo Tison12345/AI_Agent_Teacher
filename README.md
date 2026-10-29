@@ -1,5 +1,9 @@
 # Human–AI Co-Learning Agent
 
+**New here? Read [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md)**: the whole project and its end-to-end flow in plain words.
+
+A college web app where AI helps teachers review student work and **the teacher stays in charge**. It does two things: weekly reviews of a student's GitHub project, and marking of uploaded assignment answers. In both, the AI only *recommends*; the teacher's decision is the official result.
+
 Students submit a project with a GitHub repository. Gemini turns it into a weekly plan. The project's length (1 to 16 weeks, 12 by default) is chosen when it is created. Each week the student records a checkpoint, the server reads the Git changes since the previous checkpoint, and Gemini writes a *recommended* evaluation. A teacher reviews it and makes the **official** decision. Students see only what the teacher approves.
 
 > **Not ready for public deployment.** Sign-in and sign-up are lightweight (an email, a password, and a Student or Faculty role; [docs/SIGN-IN.md](docs/SIGN-IN.md)). Emails are not verified, anyone can create a faculty account, and much of the API is open. See [Limitations](#limitations-read-before-using).
@@ -14,6 +18,31 @@ Students submit a project with a GitHub repository. Gemini turns it into a weekl
 - Gemini and GitHub keys stay on the server. All external input is validated on the server.
 - AI output is validated (criteria, score limits, cited files, no claims of running code); invalid answers are rejected, never patched, never faked.
 
+## Architecture at a glance
+
+```
+Student / Teacher -> Browser -> Next.js app (pages + API routes)
+                                  |  gate (src/proxy.ts): signed cookie, role check
+                                  |-> domain services -> repositories -> Supabase Postgres + Storage
+                                  |-> LangGraph workflows (marking, weekly evaluation) -> pause for teacher
+                                  |-> Gemini (plan, evaluation, quiz, marking)
+                                  |-> GitHub REST API (commits and diffs, read only)
+                                  '-> Python text extractor (PDF / DOCX -> text)
+```
+
+| Part | Technology |
+| --- | --- |
+| App and API | Next.js 16 (App Router), React, TypeScript (strict), Tailwind CSS 4 |
+| Validation | Zod 4, shared by browser and server |
+| Database and files | Supabase: PostgreSQL and a private Storage bucket, reached only from the server |
+| AI | Google Gemini via `@google/genai` |
+| Workflows | LangGraph.js with Postgres checkpoints in the `langgraph` schema |
+| Text extraction | Python FastAPI service in [`extractor/`](extractor/README.md) |
+| Sign-in | Accounts in `app_users`, scrypt password hashes, signed HttpOnly cookie, role gate in `src/proxy.ts` |
+| Tests | Vitest |
+
+Folders: `src/app` (pages and API routes), `src/components` (screens), `src/lib` (auth, projects, checkpoints, evaluation, quiz, assignments, submissions, students analytics, workflow, github, gemini), `supabase/migrations` (database), `extractor` (Python), `docs` (guides).
+
 ## How it works
 
 1. **Student** creates a project (title, description, GitHub URL) → **Generate plan** (Gemini, one entry per project week, each with tasks and a rubric).
@@ -25,14 +54,104 @@ Students submit a project with a GitHub repository. Gemini turns it into a weekl
 
 **Weekly quiz (optional for the student).** After recording a week, the student can open that week's quiz: 5 multiple-choice questions that Gemini writes from the week's tasks and the same code changes. It is created once per week and cannot be regenerated, so a student cannot keep asking until the questions suit them. The server shuffles the options, keeps the correct answers, and grades the **one** attempt; the browser never receives correct answers or explanations until the attempt has been submitted. The teacher sees the result next to the AI recommendation, on the review page, as **separate evidence of understanding**. The quiz does not change the AI's score or the official mark.
 
-## Setup
+## Setup: get the project running
 
-Requirements: Node.js 20.9 or newer (developed on 24), a Supabase project, a Gemini API key.
+Follow these steps in order. A first-time setup takes about 20 to 30 minutes, most of it creating the accounts.
+
+### What you need first
+
+| Need | Why | Where to get it |
+| --- | --- | --- |
+| **Node.js 20.9 or newer** (developed on 24) and **Git** | Runs the app | nodejs.org, git-scm.com |
+| A **Supabase** project (free tier is fine) | Database and file storage | supabase.com, New project |
+| A **Gemini API key** | The AI | Google AI Studio, Get API key |
+| **Python 3.12** | Only for assignment uploads (reads PDF and Word files) | python.org |
+| A **GitHub token** (optional) | Only for private repos or more than 60 GitHub calls an hour | GitHub, Settings, Developer settings, fine-grained token, read-only |
+
+### Step 1. Get the code and install it
 
 ```bash
+git clone https://github.com/Tison12345/AI_Agent_Teacher.git
+cd AI_Agent_Teacher
 npm install
-cp .env.example .env.local     # then fill it in
 ```
+
+### Step 2. Create your settings file
+
+Copy the example file to `.env.local` (this file is private and never committed):
+
+```bash
+cp .env.example .env.local          # macOS / Linux / Git Bash
+copy .env.example .env.local        # Windows Command Prompt
+```
+
+Then open `.env.local` and fill it in, one value at a time:
+
+1. `SUPABASE_URL` and `SUPABASE_SECRET_KEY`: in the Supabase dashboard, **Project Settings, API Keys**. Use the project URL and the **secret** key (starts with `sb_secret_`). Do not use the publishable or anon key.
+2. `GEMINI_API_KEY`: the key from Google AI Studio. Leave `GEMINI_MODEL` empty to use the default.
+3. `EXTRACTOR_KEY`: make up a long random secret (for example 40 random characters). The Python service reads the same value from this file. Leave `EXTRACTOR_URL` as it is.
+4. `DATABASE_URL` and `DATABASE_CA_PATH`: you fill these in during Step 3 (they need a database role that does not exist yet).
+5. `GITHUB_TOKEN`: optional.
+
+The full list of variables is in the table below.
+
+### Step 3. Set up the database
+
+Open the Supabase dashboard, **SQL Editor, New query**. Paste the contents of each file in `supabase/migrations/` **in numeric order, 0001 to 0011**, and click **Run** for each (the [migration table](#database-migrations) says what each one adds). Run each file **once**.
+
+Two of them need an extra step:
+
+- **After `0009_langgraph_checkpoints.sql`**: give the new database role a password by running `alter role langgraph_app with password 'choose-a-strong-password';`. Then in the Supabase dashboard click **Connect**, copy the **transaction pooler** URL (port 6543), change the user part from `postgres.` to `langgraph_app.`, put your password in, and paste the result into `DATABASE_URL` in `.env.local`. Download Supabase's CA certificate (**Database settings, SSL configuration**) and save it as `certs/supabase-ca.crt` (or set `DATABASE_CA_PATH` to where you saved it). Details: [docs/WORKFLOWS.md](docs/WORKFLOWS.md#setup).
+- **`0011_student_links.sql`** needs `0010` first. If a student account named `student@gmail.com` exists, it also assigns any older projects and uploads to that student (see [Faculty dashboard](#faculty-dashboard)).
+
+### Step 4. Start the text reader (only needed for assignment uploads)
+
+Skip this if you only want the weekly project reviews. In a **second terminal**:
+
+```powershell
+cd extractor
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements-dev.txt
+.venv\Scripts\python -m uvicorn app:app --host 127.0.0.1 --port 8001
+```
+
+(On macOS or Linux use `python3.12 -m venv .venv`, then `.venv/bin/python ...`.) Keep this window open. Check it by opening http://127.0.0.1:8001/health, which should show `"ok": true`. More in [extractor/README.md](extractor/README.md).
+
+### Step 5. Start the app
+
+```bash
+npm run dev
+```
+
+Open **http://localhost:3000**. The settings file is read when the server starts, so **restart `npm run dev` after any change to `.env.local`**. Only one dev server can run per project folder.
+
+### Step 6. Create your first accounts
+
+1. Go to **Sign in**, open the **Sign up** tab, choose **Student**, fill in the form and create the account.
+2. Log out (sidebar, bottom). Sign up again as **Faculty** with a different email.
+
+You can now follow the flow in [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md): as a student, create a project, generate the plan and record the starting point; as faculty, open the dashboard to review. [docs/DEMO.md](docs/DEMO.md) is a ready-made demo script.
+
+### Step 7. Check that everything works (optional)
+
+```bash
+npm test            # unit, route, component and end-to-end tests; no network, no quota
+npm run typecheck   # TypeScript
+npm run lint        # code style
+```
+
+### If something goes wrong
+
+| What you see | Likely cause and fix |
+| --- | --- |
+| "Accounts are not set up on the server yet." | Migration `0010` has not been run. |
+| The faculty dashboard shows an error, or creating a project fails | Migration `0011` has not been run. |
+| "Storage is not configured on the server." | `SUPABASE_URL` or `SUPABASE_SECRET_KEY` is missing or wrong, or you did not restart the dev server. |
+| Starting an evaluation says 503, or an upload shows "Failed" straight away | `DATABASE_URL` or the certificate is missing or wrong (Step 3, after migration 0009). |
+| An upload stays "Processing" or says it cannot read files | The text reader (Step 4) is not running, or `EXTRACTOR_KEY` is missing. |
+| The AI says a daily limit was reached | The free Gemini quota for that model is used up. Wait a day, or set `GEMINI_MODEL` to another model you can use. |
+| "No new commits since…" | The student has not pushed new code to GitHub since the last recorded point. |
+| GitHub says rate limited, or a private repo cannot be read | Add a read-only `GITHUB_TOKEN`. |
 
 ### Environment variables (`.env.local`, never committed)
 
@@ -63,18 +182,10 @@ Run the files in `supabase/migrations/` **in order**, once each, in the Supabase
 | `0007_quizzes.sql` | `quizzes` (one per checkpoint), `quiz_attempts` (one per quiz); both immutable |
 | `0008_assignments.sql` | AI assignment evaluation (demo): `assignments`, `submissions`, `submission_decisions`, the `decide_submission()` function, the student-safe views `student_assignments` / `student_submissions`, and a private `submissions` storage bucket |
 | `0009_langgraph_checkpoints.sql` | The `langgraph` schema (workflow checkpoints and run leases) and the restricted role `langgraph_app`. Run it, then set the role's password (see [docs/WORKFLOWS.md](docs/WORKFLOWS.md#setup)) |
-| `0011_student_links.sql` | `projects.owner_id` and `submissions.student_id` (link each project and upload to the student's account, for the faculty dashboard). It also assigns work created before accounts to one student account (see [Faculty dashboard](#faculty-dashboard)) |
 | `0010_app_users.sql` | Sign-in and sign-up accounts (`app_users`: email, role, name, password hash), server-only. Run it before using the sign-in page (see [docs/SIGN-IN.md](docs/SIGN-IN.md)) |
+| `0011_student_links.sql` | `projects.owner_id` and `submissions.student_id` (link each project and upload to the student's account, for the faculty dashboard). It also assigns work created before accounts to one student account (see [Faculty dashboard](#faculty-dashboard)). Needs 0010 |
 
 All tables have row-level security enabled with no access for `anon`/`authenticated`; only the server's secret key can read or write.
-
-### Run
-
-```bash
-npm run dev      # http://localhost:3000
-```
-
-`.env.local` is read at startup: **restart the dev server after changing it.** Only one dev server can run per project folder.
 
 ## Scripts
 
@@ -92,13 +203,16 @@ Live tests are in `*.live.test.ts` and are excluded from `npm test`. Each create
 
 | Route | Who it is for | Notes |
 | --- | --- | --- |
+| `/login` | Everyone | Sign in and sign up (Student or Faculty) |
 | `/student`, `/student/projects/[id]` | Students | Create projects, plan, repository check, weekly progress, official results |
-| `/faculty`, `/faculty/evaluations/[id]` | Teachers | Dashboard (one dropdown per project, a card per week with score and quiz tag), evidence, decision form |
+| `/faculty`, `/faculty/evaluations/[id]` | Teachers | Student-centric dashboard (see [Faculty dashboard](#faculty-dashboard)), then the review page with evidence and the decision form |
+| `/faculty/students/[id]` | Teachers | One student's profile: scores, charts, projects, weekly history, quizzes, assignments |
 | `/faculty/projects/[id]` | Teachers | Project overview: every week with scores, feedback, AI findings and quiz result |
 | `/student/assignments`, `/student/assignments/[id]` | Students | Assignments with instructions, questions and rubric (demo, in progress) |
 | `/faculty/assignments`, `/faculty/assignments/[id]` | Teachers | Create assignments, see submissions with status (demo, in progress) |
 | `/faculty/submissions/[id]` | Teachers | One submission: original file, extracted text, AI recommendation, and the approve / edit / reject decision (demo) |
-| `GET/POST /api/projects`, `GET /api/projects/[id]` | Students | |
+| `POST /api/auth/login`, `/signup`, `/logout` | Everyone | Sign in, sign up, sign out (sets or clears the signed cookie) |
+| `GET/POST /api/projects`, `GET /api/projects/[id]` | Students | POST needs a student sign-in and links the project to that student |
 | `GET/POST /api/projects/[id]/plan` | Students | POST calls Gemini once |
 | `GET /api/projects/[id]/repo`, `/repo/compare` | Students | GitHub reads |
 | `POST …/baseline`, `POST …/weeks/[week]/complete`, `GET …/progress` | Students | Progress returns statuses only, never scores |
@@ -107,15 +221,16 @@ Live tests are in `*.live.test.ts` and are excluded from `npm test`. Each create
 | `GET /api/projects/[id]/results` | Students | Official results only |
 | `GET /api/assignments`, `GET /api/assignments/[id]` | Students | Assignments without reference answers (read from a database view that has no such column) |
 | `GET/POST /api/faculty/assignments`, `GET /api/faculty/assignments/[id]` | Teachers | Create assignments; carry reference answers |
-| `GET/POST /api/assignments/[id]/submissions`, `POST /api/submissions/[id]/retry` | Students | Upload a PDF/DOCX (the name is typed text); list by name; retry a failed one. Student-safe views only |
+| `GET/POST /api/assignments/[id]/submissions`, `POST /api/submissions/[id]/retry` | Students | Both need a student sign-in. Upload a PDF/DOCX (linked to the account); list your own uploads; retry a failed one. Student-safe views only |
 | `GET /api/faculty/assignments/[id]/submissions`, `GET /api/faculty/submissions/[id]` | Teachers | Submissions with status; one submission with the extracted text, the AI recommendation, the decision and a short-lived link to the original |
 | `POST /api/faculty/submissions/[id]/grade`, `POST /api/faculty/submissions/[id]/decision` | Teachers | Run the AI marking now; the official decision (approve, edit or reject, final) |
+| `GET /api/faculty/students`, `GET /api/faculty/students/[id]` | Teachers | The class overview and student list; one student's full profile (`unassigned` for work with no owner) |
 | `GET /api/faculty/projects/[id]` | Teachers | One project with every week; carries the AI score and your private comments |
 | `GET /api/faculty/evaluations/[id]/quiz` | Teachers | The student's quiz result for that week; answers withheld until the student has attempted it |
 | `GET /api/faculty/evaluations[?status=…]`, `GET …/[id]`, `POST …/[id]/decision` | Teachers | Carry the AI score and the diff |
 | `GET …/weeks/[week]/evaluation` | Teachers | Full AI evaluation; superseded by the faculty routes |
 
-"Who it is for" is a convention only: **nothing enforces it yet.**
+"Who it is for" is enforced for the pages and for `/api/faculty/*` (the gate in `src/proxy.ts`); creating a project and uploading answers also need a student sign-in. The other `/api/projects/*` and `/api/assignments/*` reads are still open (see Limitations).
 
 ## Design system
 
@@ -137,11 +252,11 @@ The interface is a dark theme built from a small set of tokens in `src/app/globa
 
 ## Testing
 
-`npm test` runs unit, route, component and end-to-end workflow tests (`src/e2e/workflow.test.ts` drives the real route handlers from project creation to the student seeing the teacher's score, with fake GitHub and Gemini). The results are in the final test report delivered with this phase.
+`npm test` runs unit, route, component and end-to-end workflow tests (`src/e2e/workflow.test.ts` drives the real route handlers from project creation to the student seeing the teacher's score, with fake GitHub and Gemini). Run it before every commit.
 
 ## Limitations (read before using)
 
-1. **Lightweight sign-in, not production authentication.** Student pages need the student role, and faculty pages and `/api/faculty/*` need the faculty role, but emails are not verified, anyone can sign up as faculty, there is no password reset or rate limiting, and the rest of the API (`/api/projects/*`, `/api/assignments/*`, `/api/submissions/*`, `…/weeks/[week]/evaluation`, which returns AI scores) is open. Students are not separated from each other; the student dashboard lists every project. Real authentication (Supabase Auth with student/teacher roles) is the first thing to add before real use; the role rules are in one place, `src/lib/auth/session.ts`, and the gate is `src/proxy.ts`.
+1. **Lightweight sign-in, not production authentication.** Student pages need the student role, and faculty pages and `/api/faculty/*` need the faculty role, but emails are not verified, anyone can sign up as faculty, there is no password reset or rate limiting, and the rest of the API (`/api/projects/*`, `/api/assignments/*`, `/api/submissions/*`, `…/weeks/[week]/evaluation`, which returns AI scores) is open. Student pages still list every project (work is linked to its owner for the faculty dashboard, but the student views are not narrowed to "my projects" yet). Real authentication (Supabase Auth with student/teacher roles) is the first thing to add before real use; the role rules are in one place, `src/lib/auth/session.ts`, and the gate is `src/proxy.ts`.
 2. **AI scores are not trustworthy on their own.** In testing the model scored a complete week 100/100 twice and reports "high" confidence even on very small diffs. It sees changed lines only, never runs code, and cannot judge whether the program works or who wrote it. Teacher review is essential.
 3. **Decisions are final.** There is no revise-with-history workflow.
 4. **Gemini quota.** On the free tier, a daily limit per model can be exhausted by a handful of evaluations. The app reports a daily limit differently from a per-minute one, but cannot fix either.
@@ -165,7 +280,7 @@ A small, separate feature for a college demonstration: faculty create assignment
 
 Marking uses the same Gemini key and model as the rest of the app. Marks can differ between runs of the same answer, which is why the teacher decides.
 
-Demo limits, on purpose: **only a lightweight sign-in** (emails are not verified and anyone can sign up as faculty, so anyone can create or approve), students are identified only by a typed name, scanned documents are not supported (they will be reported as needing OCR), and the data in the demo is fictional.
+Demo limits, on purpose: **only a lightweight sign-in** (emails are not verified and anyone can sign up as faculty, so anyone can create or approve), a student's uploads are linked to their signed-in account (the name on the form is still typed text, shown to faculty), scanned documents are not supported (they will be reported as needing OCR), and the data in the demo is fictional.
 
 ## Deployment notes
 

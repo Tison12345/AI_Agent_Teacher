@@ -17,8 +17,8 @@ faculty pages apart and to give each person their own login, but it is **not** a
 - **Student pages** (`/student/...`) need the student role. **Faculty pages** (`/faculty/...`) and the **faculty API**
   (`/api/faculty/...`: AI scores, evaluations, decisions) need the faculty role. Anyone else is redirected to `/login`
   (an API call gets 401 or 403). The sidebar only offers the signed-in role's pages.
-- A student who signs in has their full name filled in on the upload form, where it can be changed. Submissions are
-  still found by that typed name.
+- A student who signs in has their full name filled in on the upload form, where it can be changed. The name is shown
+  to faculty; a student's own uploads are listed by their account, not by the typed name.
 - **Creating a project and uploading an assignment need a student sign-in.** The new record is linked to the student's
   account, taken from the signed cookie. Faculty cannot create them.
 - Everything else is as before: the dashboards, assignment marking, weekly evaluation, the LangGraph workflows and the
